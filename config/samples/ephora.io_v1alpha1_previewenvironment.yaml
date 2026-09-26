@@ -1,0 +1,19 @@
+apiVersion: ephora.io/v1alpha1
+kind: PreviewEnvironment
+metadata:
+  name: pr-1234-checkout-api
+  labels:
+    app.kubernetes.io/name: ephora-operator
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  source:
+    repo: "https://gitlab.internal/checkout/checkout-api"
+    chartPath: "charts/app"
+    revision: "pr-1234-abc123"
+  prNumber: 1234
+  appName: checkout-api
+  valuesOverride:
+    image:
+      tag: "pr-1234-abc123"
+    replicas: 1
+  ttl: 48h

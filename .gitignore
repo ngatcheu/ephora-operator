@@ -24,6 +24,10 @@ profile.cov
 go.work
 go.work.sum
 
+# Local tool binaries downloaded by the Makefile (controller-gen, kustomize, operator-sdk, opm...)
+/bin/
+cover.out
+
 # env file
 .env
 

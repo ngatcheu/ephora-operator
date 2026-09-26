@@ -1,0 +1,16 @@
+# DEV ONLY — requires the dev CRD (make install-dev).
+# Deploys the public helm/examples "hello-world" chart (nginx).
+apiVersion: ephora.io/v1alpha1
+kind: PreviewEnvironment
+metadata:
+  name: pr-1-hello-world
+spec:
+  source:
+    repo: "https://github.com/helm/examples"
+    chartPath: "charts/hello-world"
+    revision: "main"
+  prNumber: 1
+  appName: hello-world
+  valuesOverride:
+    replicaCount: 1
+  ttl: 1h

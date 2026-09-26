@@ -1,0 +1,7 @@
+namespace: ephora-operator-system
+namePrefix: ephora-operator-
+
+resources:
+- ../crd
+- ../rbac
+- ../manager
