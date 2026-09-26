@@ -185,7 +185,3 @@ type PreviewEnvironmentList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []PreviewEnvironment `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&PreviewEnvironment{}, &PreviewEnvironmentList{})
-}

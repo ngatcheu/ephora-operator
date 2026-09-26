@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege by default; jobs opt in to what they need.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (unit + envtest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # Also runs manifests/generate/fmt/vet (see Makefile).
+      - name: make test
+        run: make test
+
+      # Fails if CRDs, RBAC, deepcopy or formatting were not regenerated and
+      # committed after changing api/ or internal/controller/ markers.
+      - name: Check generated files are up to date
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Generated files are stale: run 'make manifests generate fmt' and commit the result."
+            exit 1
+          fi
+
+  lint:
+    name: Lint + vulnerability check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
+      # Known CVEs in Go dependencies actually reachable from our code.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  image:
+    name: Image build + Trivy scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload SARIF results to the Security tab
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ephora-operator:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Blocking: fixable HIGH/CRITICAL vulnerabilities in the image.
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ephora-operator:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # Report-only: full findings (image + Kubernetes manifests misconfig)
+      # published to GitHub code scanning.
+      - name: Trivy image scan (SARIF)
+        if: always()
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ephora-operator:ci
+          format: sarif
+          output: trivy-image.sarif
+          exit-code: "0"
+
+      - name: Trivy config scan (SARIF)
+        if: always()
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: config
+          scan-ref: config/
+          format: sarif
+          output: trivy-config.sarif
+          exit-code: "0"
+
+      - name: Upload image scan results
+        if: always() && github.event_name == 'push'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - name: Upload config scan results
+        if: always() && github.event_name == 'push'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config

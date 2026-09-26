@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -52,7 +53,9 @@ type PreviewEnvironmentReconciler struct {
 	// credentials (see restClientGetter in helmchart.go).
 	RESTConfig *rest.Config
 
-	Recorder record.EventRecorder
+	// Recorder emits Kubernetes Events (events.k8s.io API). Optional: nil in
+	// tests.
+	Recorder events.EventRecorder
 
 	// CleanupTimeout overrides DefaultCleanupTimeout when set.
 	CleanupTimeout time.Duration
@@ -68,7 +71,7 @@ type PreviewEnvironmentReconciler struct {
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=resourcequotas;limitranges,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 func (r *PreviewEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -90,7 +93,9 @@ func (r *PreviewEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err := r.Update(ctx, pe); err != nil {
 			return ctrl.Result{}, fmt.Errorf("adding finalizer: %w", err)
 		}
-		return ctrl.Result{Requeue: true}, nil
+		// Carry on in the same pass: pe now holds the updated object, and a
+		// metadata-only change would not re-trigger a reconcile anyway
+		// (GenerationChangedPredicate in SetupWithManager).
 	}
 
 	// TTL expiry (DAT §4.2): delete the CR itself once expired so the
@@ -122,7 +127,7 @@ func (r *PreviewEnvironmentReconciler) reconcileNormal(ctx context.Context, pe *
 		if err != nil {
 			return r.failAndRequeue(ctx, pe, "InvalidTTL", fmt.Errorf("parsing spec.ttl %q: %w", pe.Spec.TTL, err))
 		}
-		expiresAt := metav1.NewTime(pe.CreationTimestamp.Time.Add(ttl))
+		expiresAt := metav1.NewTime(pe.CreationTimestamp.Add(ttl))
 		pe.Status.ExpiresAt = &expiresAt
 	}
 
@@ -293,7 +298,7 @@ func (r *PreviewEnvironmentReconciler) failAndRequeue(ctx context.Context, pe *e
 		log.FromContext(ctx).Error(err, "failed to record Failed phase")
 	}
 	if r.Recorder != nil {
-		r.Recorder.Event(pe, "Warning", reason, cause.Error())
+		r.Recorder.Eventf(pe, nil, corev1.EventTypeWarning, reason, "Reconcile", "%s", cause.Error())
 	}
 	return ctrl.Result{}, cause
 }

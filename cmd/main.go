@@ -78,7 +78,7 @@ func main() {
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
 		RESTConfig:     mgr.GetConfig(),
-		Recorder:       mgr.GetEventRecorderFor("ephora-operator"),
+		Recorder:       mgr.GetEventRecorder("ephora-operator"),
 		CleanupTimeout: cleanupTimeout,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PreviewEnvironment")

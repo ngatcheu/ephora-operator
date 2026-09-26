@@ -83,20 +83,16 @@ func TestReconcileProvisionsGuardrailsAndReportsFailure(t *testing.T) {
 	key := client.ObjectKeyFromObject(pe)
 	r := newTestReconciler(t)
 
-	// Pass 1: only the cleanup finalizer is added.
-	if err := reconcileOnce(ctx, r, key); err != nil {
-		t.Fatalf("first reconcile: %v", err)
-	}
-	if !controllerutil.ContainsFinalizer(getPE(t, ctx, key), ephoraiov1alpha1.PreviewCleanupFinalizer) {
-		t.Fatal("cleanup finalizer not added")
-	}
-
-	// Pass 2: guardrails are created, then the chart fetch fails.
+	// A single pass adds the finalizer, creates the guardrails, then fails
+	// on the (offline) chart fetch.
 	if err := reconcileOnce(ctx, r, key); err == nil {
-		t.Fatal("second reconcile: expected chart fetch error, got nil")
+		t.Fatal("reconcile: expected chart fetch error, got nil")
 	}
 
 	got := getPE(t, ctx, key)
+	if !controllerutil.ContainsFinalizer(got, ephoraiov1alpha1.PreviewCleanupFinalizer) {
+		t.Fatal("cleanup finalizer not added")
+	}
 	nsName := "preview-pr-101-guardrails"
 	if got.Status.Phase != ephoraiov1alpha1.PhaseFailed {
 		t.Errorf("phase = %q, want %q", got.Status.Phase, ephoraiov1alpha1.PhaseFailed)
@@ -154,8 +150,7 @@ func TestReconcileDeletionRunsFinalizer(t *testing.T) {
 	key := client.ObjectKeyFromObject(pe)
 	r := newTestReconciler(t)
 
-	_ = reconcileOnce(ctx, r, key) // finalizer
-	_ = reconcileOnce(ctx, r, key) // namespace + guardrails (chart fetch fails)
+	_ = reconcileOnce(ctx, r, key) // finalizer + namespace + guardrails (chart fetch fails)
 
 	before := testutil.ToFloat64(CleanupTotal.WithLabelValues(CleanupReasonDeleted))
 	if err := k8sClient.Delete(ctx, getPE(t, ctx, key)); err != nil {
@@ -184,7 +179,7 @@ func TestReconcileTTLExpiryDeletesEnvironment(t *testing.T) {
 	key := client.ObjectKeyFromObject(pe)
 	r := newTestReconciler(t)
 
-	_ = reconcileOnce(ctx, r, key) // finalizer
+	_ = reconcileOnce(ctx, r, key) // finalizer + guardrails (chart fetch fails)
 
 	// Simulate an environment past its expiry.
 	expired := getPE(t, ctx, key)
