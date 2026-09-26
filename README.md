@@ -13,6 +13,7 @@
 
 ## Sommaire
 
+- [Pourquoi](#pourquoi)
 - [Fonctionnalités](#fonctionnalités)
 - [Fonctionnement](#fonctionnement)
 - [Démarrage rapide (kind)](#démarrage-rapide-kind)
@@ -26,6 +27,24 @@
 - [Feuille de route](#feuille-de-route)
 
 ---
+
+## Pourquoi
+
+Un **environnement de preview éphémère** est une copie temporaire et isolée de l'application, créée automatiquement pour **une Pull Request**, puis détruite quand elle n'est plus utile.
+
+- **Preview** : il contient exactement le code de la PR. On peut **tester la modification dans un vrai Kubernetes avant de la fusionner** — le développeur valide son code, le relecteur teste la fonctionnalité au lieu de seulement lire le diff.
+- **Éphémère** : il naît à l'ouverture de la PR, se met à jour à chaque commit, et disparaît à la fermeture de la PR ou à l'expiration de son TTL.
+
+**Exemple** : Alice ouvre la PR #1234 sur `checkout-api` → la CI crée `preview-pr-1234-checkout-api` avec la version de la PR → Bob la teste → Alice pousse un correctif, l'environnement est mis à jour → la PR est fusionnée, l'environnement est supprimé. Pendant ce temps, la PR #1235 a son propre environnement, sans interférence.
+
+| Sans | Avec ephora-operator |
+|---|---|
+| Un **staging partagé** où les PR s'écrasent mutuellement | **Un environnement isolé par PR** |
+| Les bugs sont découverts **après** la fusion | On teste **avant** la fusion |
+| Des environnements **oubliés** qui coûtent en continu | **Suppression automatique**, zéro orphelin |
+| Un pipeline CI fragile qui crée et nettoie à la main | Un **contrat déclaratif** : la CI déclare, l'opérateur s'occupe du reste |
+
+On parle aussi de *review apps* (GitLab, Heroku) ou d'*ephemeral environments*.
 
 ## Fonctionnalités
 
