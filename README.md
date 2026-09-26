@@ -44,7 +44,7 @@ Un **environnement de preview éphémère** est une copie temporaire et isolée 
 | Des environnements **oubliés** qui coûtent en continu | **Suppression automatique**, zéro orphelin |
 | Un pipeline CI fragile qui crée et nettoie à la main | Un **contrat déclaratif** : la CI déclare, l'opérateur s'occupe du reste |
 
-On parle aussi de *review apps* (GitLab, Heroku) ou d'*ephemeral environments*.
+On parle aussi de *review apps* ou d'*ephemeral environments*.
 
 ## Fonctionnalités
 
@@ -59,7 +59,7 @@ On parle aussi de *review apps* (GitLab, Heroku) ou d'*ephemeral environments*.
 ## Fonctionnement
 
 ```
-CI (GitLab / GitHub)  ──kubectl apply/delete──▶  PreviewEnvironment (CRD)
+CI (GitHub Actions)   ──kubectl apply/delete──▶  PreviewEnvironment (CRD)
                                                        │
                                                        ▼
                                               ephora-operator (reconciler)
@@ -142,7 +142,7 @@ metadata:
   name: pr-1234-checkout-api
 spec:
   source:
-    repo: "https://gitlab.internal/checkout/checkout-api"
+    repo: "https://github.internal/checkout/checkout-api"
     chartPath: "charts/app"
     revision: "pr-1234-abc123"
   prNumber: 1234
@@ -197,24 +197,39 @@ Laisser expirer le TTL, ou supprimer la CRD (typiquement fait par la CI à la fe
 kubectl delete penv pr-1234-checkout-api
 ```
 
-### Intégration CI (exemple GitLab)
+### Intégration CI (exemple GitHub Actions)
 
 ```yaml
-deploy_preview:
-  stage: preview
-  script:
-    - envsubst < preview-template.yaml | kubectl apply -f -
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+# .github/workflows/preview.yml (dans le dépôt de l'application)
+name: Preview environment
 
-cleanup_preview:
-  stage: preview
-  script:
-    - kubectl delete previewenvironment pr-${CI_MERGE_REQUEST_IID}-checkout-api --ignore-not-found
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      when: manual
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REVISION: ${{ github.event.pull_request.head.sha }}
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Kubeconfig (accès limité aux PreviewEnvironment)
+        run: echo "${{ secrets.PREVIEW_KUBECONFIG }}" > "$KUBECONFIG"
+
+      - name: Créer / mettre à jour l'environnement
+        if: github.event.action != 'closed'
+        run: envsubst < preview-template.yaml | kubectl apply -f -
+
+      - name: Supprimer l'environnement
+        if: github.event.action == 'closed'
+        run: kubectl delete previewenvironment "pr-${PR_NUMBER}-checkout-api" --ignore-not-found
 ```
+
+`preview-template.yaml` reprend l'exemple ci-dessus avec `${PR_NUMBER}` et `${REVISION}` à la place des valeurs en dur.
 
 Le compte de service de la CI n'a besoin que des droits sur les `PreviewEnvironment` du namespace de gestion (rôle `previewenvironment-editor` fourni dans `config/rbac/`), jamais d'un accès direct aux namespaces `preview-*`.
 
@@ -226,7 +241,7 @@ Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `pe
 
 | Champ | Type | Obligatoire | Validation | Description |
 |---|---|---|---|---|
-| `source.repo` | string | ✅ | `^https://(gitlab\.internal\|github\.internal)/.+$` | Dépôt Git du chart — hôtes internes uniquement |
+| `source.repo` | string | ✅ | `^https://github\.internal/.+$` | Dépôt Git du chart — hôte interne uniquement |
 | `source.chartPath` | string | ✅ | non vide, doit rester dans le dépôt | Chemin du chart dans le dépôt |
 | `source.revision` | string | ✅ | `^[A-Za-z0-9][A-Za-z0-9._/-]*$`, ≤ 255 | Commit, branche ou tag |
 | `prNumber` | int | ✅ | ≥ 1, **immuable** | Numéro de la Pull Request |
@@ -235,7 +250,7 @@ Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `pe
 | `ttl` | string | ✅ | heures entières (`48h`), **≤ 168h** | Durée de vie avant suppression |
 | `metadata.name` | string | ✅ | ≤ 53 caractères | Sert de nom de release Helm |
 
-> **Adapter `source.repo`** : le motif par défaut n'accepte que les hôtes d'exemple `gitlab.internal` / `github.internal`. Remplacez-le par vos vrais hôtes Git internes dans `api/v1alpha1/previewenvironment_types.go`, puis `make manifests`.
+> **Adapter `source.repo`** : le motif par défaut n'accepte que l'hôte d'exemple `github.internal`. Remplacez-le par votre vrai hôte Git interne (par exemple votre GitHub Enterprise) dans `api/v1alpha1/previewenvironment_types.go`, puis `make manifests`.
 
 ### Status
 

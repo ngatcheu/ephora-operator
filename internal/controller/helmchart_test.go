@@ -113,7 +113,7 @@ func TestResolveChart(t *testing.T) {
 		},
 		{
 			name:    "rejects https repo (tests are offline)",
-			source:  ephoraiov1alpha1.ChartSource{Repo: "https://gitlab.internal/team/app", ChartPath: "charts/app", Revision: "HEAD"},
+			source:  ephoraiov1alpha1.ChartSource{Repo: "https://github.internal/team/app", ChartPath: "charts/app", Revision: "HEAD"},
 			wantErr: "cloning",
 		},
 	}

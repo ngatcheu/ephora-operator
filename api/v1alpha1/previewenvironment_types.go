@@ -50,7 +50,7 @@ type ChartSource struct {
 	// host(s) before going to production — the default only matches the
 	// placeholder hosts used in the DAT/README examples.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Pattern=`^https://(gitlab\.internal|github\.internal)/.+$`
+	// +kubebuilder:validation:Pattern=`^https://github\.internal/.+$`
 	Repo string `json:"repo"`
 
 	// ChartPath is the path to the chart within the repository.

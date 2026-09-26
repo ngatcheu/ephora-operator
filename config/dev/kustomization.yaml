@@ -17,7 +17,7 @@ patches:
   patch: |-
     - op: test
       path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/source/properties/repo/pattern
-      value: ^https://(gitlab\.internal|github\.internal)/.+$
+      value: ^https://github\.internal/.+$
     - op: replace
       path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/source/properties/repo/pattern
-      value: ^https://((gitlab\.internal|github\.internal)/.+|github\.com/helm/examples(\.git)?)$
+      value: ^https://(github\.internal/.+|github\.com/helm/examples(\.git)?)$

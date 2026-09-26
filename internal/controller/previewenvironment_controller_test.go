@@ -37,7 +37,7 @@ func newTestPE(t *testing.T, ctx context.Context, name string, pr int32, app str
 			Source: ephoraiov1alpha1.ChartSource{
 				// Unreachable on purpose: GIT_ALLOW_PROTOCOL=file (suite_test.go)
 				// makes the chart fetch fail fast, exercising the Failed path.
-				Repo:      "https://gitlab.internal/team/" + app,
+				Repo:      "https://github.internal/team/" + app,
 				ChartPath: "charts/app",
 				Revision:  "main",
 			},
@@ -231,7 +231,7 @@ func TestCRDValidation(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: mgmt.Name},
 			Spec: ephoraiov1alpha1.PreviewEnvironmentSpec{
 				Source: ephoraiov1alpha1.ChartSource{
-					Repo: "https://gitlab.internal/team/app", ChartPath: "charts/app", Revision: "main",
+					Repo: "https://github.internal/team/app", ChartPath: "charts/app", Revision: "main",
 				},
 				PRNumber: 1,
 				AppName:  "app",
@@ -248,7 +248,7 @@ func TestCRDValidation(t *testing.T) {
 		{"ttl not in hours", func(pe *ephoraiov1alpha1.PreviewEnvironment) { pe.Spec.TTL = "30m" }},
 		{"repo not allow-listed", func(pe *ephoraiov1alpha1.PreviewEnvironment) { pe.Spec.Source.Repo = "https://github.com/evil/repo" }},
 		{"repo not https", func(pe *ephoraiov1alpha1.PreviewEnvironment) {
-			pe.Spec.Source.Repo = "git@gitlab.internal:team/app.git"
+			pe.Spec.Source.Repo = "git@github.internal:team/app.git"
 		}},
 		{"revision starting with dash", func(pe *ephoraiov1alpha1.PreviewEnvironment) { pe.Spec.Source.Revision = "--upload-pack=x" }},
 		{"appName not a DNS label", func(pe *ephoraiov1alpha1.PreviewEnvironment) { pe.Spec.AppName = "Bad_Name" }},

@@ -26,7 +26,7 @@ var (
 
 func TestMain(m *testing.M) {
 	// Tests must never reach the network: git may only clone local paths.
-	// Any https chart repo (e.g. https://gitlab.internal/...) fails fast.
+	// Any https chart repo (e.g. https://github.internal/...) fails fast.
 	_ = os.Setenv("GIT_ALLOW_PROTOCOL", "file")
 
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
