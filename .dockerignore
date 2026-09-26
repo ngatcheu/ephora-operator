@@ -1,0 +1,7 @@
+# Only what the Dockerfile COPYs is needed in the build context.
+*
+!go.mod
+!go.sum
+!cmd/
+!api/
+!internal/
