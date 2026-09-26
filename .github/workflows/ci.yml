@@ -22,7 +22,10 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          # Latest 1.26.x patch (stdlib security fixes), not the exact
+          # go.mod minimum (1.26.0), which govulncheck flags.
+          go-version: "1.26"
+          check-latest: true
 
       # Also runs manifests/generate/fmt/vet (see Makefile).
       - name: make test
@@ -45,7 +48,10 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          # Latest 1.26.x patch (stdlib security fixes), not the exact
+          # go.mod minimum (1.26.0), which govulncheck flags.
+          go-version: "1.26"
+          check-latest: true
 
       - uses: golangci/golangci-lint-action@v9
         with:
