@@ -127,6 +127,12 @@ type PreviewEnvironmentStatus struct {
 	// +optional
 	ObservedRevision string `json:"observedRevision,omitempty"`
 
+	// ObservedGeneration is the metadata.generation of the spec last
+	// successfully deployed; a mismatch (any spec change, e.g.
+	// valuesOverride) triggers a `helm upgrade`.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// ExpiresAt is the computed expiry time: creationTimestamp + spec.ttl,
 	// set once and never recomputed so editing spec.ttl after creation does
 	// not retroactively extend an environment already close to expiry.
@@ -159,6 +165,8 @@ type PreviewEnvironmentStatus struct {
 // formats them as an age in the past).
 // +kubebuilder:printcolumn:name="Expires",type=string,JSONPath=".status.expiresAt"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+// The object name is used as the Helm release name, which Helm caps at 53 chars.
+// +kubebuilder:validation:XValidation:rule="self.metadata.name.size() <= 53",message="metadata.name must be at most 53 characters (used as the Helm release name)"
 
 // PreviewEnvironment is the Schema for the previewenvironments API.
 type PreviewEnvironment struct {

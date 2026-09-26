@@ -146,20 +146,28 @@ func (r *PreviewEnvironmentReconciler) reconcileNormal(ctx context.Context, pe *
 		}
 	}
 
-	// Skip the relatively expensive chart fetch + Helm diff if we've
-	// already reconciled this exact revision and the release exists.
-	needsDeploy := pe.Status.ObservedRevision != pe.Spec.Source.Revision || pe.Status.HelmReleaseName == ""
+	// Skip the relatively expensive chart fetch + Helm upgrade if this exact
+	// spec (metadata.generation) was already deployed. Comparing the
+	// generation rather than only spec.source.revision means a
+	// spec.valuesOverride change also triggers a `helm upgrade` (DAT §4.3).
+	firstInstall := pe.Status.HelmReleaseName == ""
+	needsDeploy := firstInstall || pe.Status.ObservedGeneration != pe.Generation
 
 	if needsDeploy {
 		if err := r.deployChart(ctx, pe, ns, rel); err != nil {
 			return r.failAndRequeue(ctx, pe, "HelmDeployFailed", err)
 		}
-		ProvisioningDuration.Observe(time.Since(pe.CreationTimestamp.Time).Seconds())
+		// Creation-to-Running delay (DAT §6 NFR) — first install only, so
+		// later upgrades of a long-lived environment don't skew the histogram.
+		if firstInstall {
+			ProvisioningDuration.Observe(time.Since(pe.CreationTimestamp.Time).Seconds())
+		}
 	}
 
 	pe.Status.Namespace = ns
 	pe.Status.HelmReleaseName = rel
 	pe.Status.ObservedRevision = pe.Spec.Source.Revision
+	pe.Status.ObservedGeneration = pe.Generation
 	if err := r.setPhase(ctx, pe, ephoraiov1alpha1.PhaseRunning, metav1.ConditionTrue, "HelmReleaseDeployed", "helm release deployed and reconciled"); err != nil {
 		return ctrl.Result{}, err
 	}

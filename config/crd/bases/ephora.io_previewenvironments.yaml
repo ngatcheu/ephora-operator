@@ -223,6 +223,13 @@ spec:
                   Namespace is the dedicated namespace created for this environment
                   (`preview-pr-<prNumber>-<appName>`, ADR-04).
                 type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the metadata.generation of the spec last
+                  successfully deployed; a mismatch (any spec change, e.g.
+                  valuesOverride) triggers a `helm upgrade`.
+                format: int64
+                type: integer
               observedRevision:
                 description: |-
                   ObservedRevision is the last spec.source.revision successfully
@@ -240,6 +247,10 @@ spec:
                 type: string
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: metadata.name must be at most 53 characters (used as the Helm release
+            name)
+          rule: self.metadata.name.size() <= 53
     served: true
     storage: true
     subresources:
