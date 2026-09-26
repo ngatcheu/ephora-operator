@@ -1,62 +1,120 @@
 # ephora-operator
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![CI](https://github.com/ngatcheu/ephora-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/ngatcheu/ephora-operator/actions/workflows/ci.yml)
 [![Kubernetes](https://img.shields.io/badge/kubernetes-1.28%2B-326ce5.svg)](https://kubernetes.io)
-[![Operator SDK](https://img.shields.io/badge/operator--sdk-helm--plugin-orange.svg)](https://sdk.operatorframework.io)
-[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](#)
+[![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](https://go.dev)
+[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](#feuille-de-route)
 
-**ephora-operator** est un opérateur Kubernetes qui automatise tout le cycle de vie des **environnements de preview éphémères** : il provisionne un namespace isolé et une release Helm par Pull Request, suit leur état, et les supprime automatiquement à l'expiration du TTL ou à la fermeture de la PR — fini les environnements orphelins et le nettoyage manuel.
+**ephora-operator** est un opérateur Kubernetes qui gère tout le cycle de vie des **environnements de preview éphémères** : pour chaque Pull Request, il crée un namespace isolé, y déploie le chart Helm de l'application, suit son état, puis supprime tout automatiquement à l'expiration du TTL ou à la fermeture de la PR.
 
-Construit avec [Operator SDK](https://sdk.operatorframework.io) (plugin Helm).
+> Plus d'environnements oubliés, plus de nettoyage manuel : on applique une CRD, on obtient un environnement ; on la supprime (ou on la laisse expirer), tout disparaît.
 
 ---
 
-## Pourquoi
+## Sommaire
 
-Les environnements de preview par PR sont en général soit absents (un staging partagé, source de conflits), soit gérés par un pipeline CI fragile qui ne fait pas le ménage de façon fiable — d'où des namespaces orphelins et un coût de cluster gaspillé.
+- [Fonctionnalités](#fonctionnalités)
+- [Fonctionnement](#fonctionnement)
+- [Démarrage rapide (kind)](#démarrage-rapide-kind)
+- [Utilisation](#utilisation)
+- [Référence de l'API](#référence-de-lapi)
+- [Sécurité](#sécurité)
+- [Observabilité](#observabilité)
+- [Configuration de l'opérateur](#configuration-de-lopérateur)
+- [Déploiement dans un cluster](#déploiement-dans-un-cluster)
+- [Développement](#développement)
+- [Feuille de route](#feuille-de-route)
 
-`ephora-operator` transforme cela en un contrat déclaratif qui se nettoie tout seul : on applique une CRD, on obtient un environnement qui tourne ; on la laisse expirer (ou on supprime la CRD), et tout ce qu'elle a créé disparaît avec elle.
+---
 
 ## Fonctionnalités
 
-- 🚀 **Provisionnement déclaratif** — une CRD (`PreviewEnvironment`) par Pull Request, qui s'appuie sur le chart Helm existant de votre application.
-- ⏱ **Expiration automatique par TTL** — aucun environnement qui traîne après une PR oubliée.
-- 🧹 **Nettoyage garanti** — finalizer Kubernetes + détection périodique des namespaces orphelins.
-- 🔒 **Isolé par défaut** — namespace dédié par environnement, `NetworkPolicy` default-deny, `ResourceQuota`/`LimitRange`.
-- 📊 **Observable** — métriques Prometheus sur les environnements actifs, la durée de provisionnement et les nettoyages.
-- 🔁 **Compatible GitOps** — pas de boucle de réconciliation concurrente ; la CI applique/supprime directement la CRD, aucun endpoint HTTP supplémentaire à sécuriser.
+- 🚀 **Provisionnement déclaratif** — une CRD `PreviewEnvironment` par Pull Request, qui déploie le chart Helm existant de l'application depuis son dépôt Git, à la révision demandée.
+- 🔄 **Mise à jour continue** — toute modification du `spec` (nouveau commit, `valuesOverride`…) déclenche un `helm upgrade`.
+- ⏱ **Expiration automatique** — TTL borné à 7 jours ; même un environnement en échec expire.
+- 🧹 **Nettoyage garanti** — finalizer Kubernetes + balayage périodique des namespaces orphelins.
+- 🔒 **Isolé par défaut** — namespace dédié, `NetworkPolicy` default-deny, `ResourceQuota` et `LimitRange`.
+- 📊 **Observable** — métriques Prometheus, conditions et événements Kubernetes.
+- 🔁 **Compatible GitOps** — la CI applique/supprime la CRD via `kubectl`, aucun endpoint HTTP à exposer ni à sécuriser.
 
 ## Fonctionnement
 
 ```
-CI (GitLab)  ──kubectl apply/delete──▶  CRD PreviewEnvironment
-                                              │
-                                              ▼
-                                    ephora-operator (reconciler)
-                                              │
-                          ┌───────────────────┴───────────────────┐
-                          ▼                                       ▼
-              namespace : preview-pr-<n>-<app>         planificateur TTL (requeue)
-              - release Helm (chart de votre app)
-              - NetworkPolicy (deny-all par défaut)
-              - ResourceQuota / LimitRange
+CI (GitLab / GitHub)  ──kubectl apply/delete──▶  PreviewEnvironment (CRD)
+                                                       │
+                                                       ▼
+                                              ephora-operator (reconciler)
+                                                       │
+                         ┌─────────────────────────────┼──────────────────────────┐
+                         ▼                             ▼                          ▼
+          namespace preview-pr-<n>-<app>     git clone du chart         TTL (requeue) +
+          - NetworkPolicy default-deny       → helm install/upgrade     finalizer de nettoyage
+          - ResourceQuota / LimitRange
 ```
 
-## Démarrage rapide
+**Cycle de vie** (`status.phase`) :
 
-### Prérequis
+| Phase | Signification |
+|---|---|
+| `Provisioning` | Namespace et garde-fous créés, déploiement du chart en cours |
+| `Running` | Release Helm déployée |
+| `Failed` | Erreur (clone, chart, Helm…) — réessai automatique avec backoff exponentiel ; la raison est dans la condition `Ready` |
+| `Expiring` | TTL atteint, suppression déclenchée |
+| `Terminating` | Suppression en cours (désinstallation Helm puis suppression du namespace) |
 
-- Un cluster Kubernetes (1.28+)
-- Helm 3
-- Un accès `kubectl` avec les droits pour créer la CRD `PreviewEnvironment`
+**Détails de la réconciliation :**
 
-### Installer l'opérateur
+1. Ajout du finalizer `ephora.io/preview-cleanup`.
+2. Calcul de `status.expiresAt = création + spec.ttl` (une seule fois, non recalculé si le TTL change).
+3. Création du namespace `preview-pr-<prNumber>-<appName>` et de ses garde-fous.
+4. Clone de `spec.source.repo` à `spec.source.revision`, chargement du chart `spec.source.chartPath`, puis `helm install` ou `helm upgrade` avec `spec.valuesOverride`.
+5. À l'expiration ou à la suppression de la CRD : `helm uninstall`, suppression du namespace, puis retrait du finalizer (après au plus `--cleanup-timeout` ; le balayage des orphelins prend le relais si besoin).
+
+> **Choix d'architecture** : le projet est scaffoldé avec Operator SDK (plugin Helm), mais la réconciliation est écrite en Go : le chart à déployer est dynamique par instance, ce que le reconciler Helm générique ne sait pas faire. Toute la logique de déploiement reste déléguée au SDK Helm (install/upgrade/uninstall). Voir ADR-01 dans [adrs-ephora-operator.md](adrs-ephora-operator.md).
+
+## Démarrage rapide (kind)
+
+Prérequis : les outils de la section [Développement](#prérequis).
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/<org>/ephora-operator/main/dist/install.yaml
+# 1. Cluster local
+kind create cluster --name ephora
+
+# 2. CRD de développement (autorise le dépôt public helm/examples, voir plus bas)
+make install-dev
+
+# 3. Opérateur en local (terminal 1, à laisser tourner)
+make run
+
+# 4. Environnement de test (terminal 2)
+kubectl apply -f config/dev/samples/hello-world.yaml
+kubectl get penv -w
 ```
 
-### Créer un environnement de preview
+Au bout de quelques secondes, l'environnement passe en `Running` :
+
+```bash
+$ kubectl get penv
+NAME               PHASE     PR   NAMESPACE                  EXPIRES                AGE
+pr-1-hello-world   Running   1    preview-pr-1-hello-world   2026-09-26T14:10:05Z   1m
+
+$ kubectl get pods -n preview-pr-1-hello-world
+NAME                               READY   STATUS    RESTARTS   AGE
+pr-1-hello-world-755897b8d-qlzt9   1/1     Running   0          1m
+```
+
+Nettoyage :
+
+```bash
+kubectl delete penv pr-1-hello-world   # le namespace est supprimé par le finalizer
+kind delete cluster --name ephora
+```
+
+> ⚠️ **`make install-dev` est réservé au développement.** Il installe une variante de la CRD qui accepte en plus `https://github.com/helm/examples` (les hôtes internes restent autorisés, tout le reste reste refusé). La cible refuse de s'exécuter si le contexte kube n'est pas un cluster kind. En production, utilisez `make install`.
+
+## Utilisation
+
+### Créer un environnement
 
 ```yaml
 apiVersion: ephora.io/v1alpha1
@@ -73,19 +131,20 @@ spec:
   valuesOverride:
     image:
       tag: "pr-1234-abc123"
-    replicas: 1
+    replicaCount: 1
   ttl: 48h
 ```
 
 ```bash
 kubectl apply -f preview-pr-1234.yaml
-kubectl get previewenvironment pr-1234-checkout-api -w
+kubectl get penv pr-1234-checkout-api -w      # "penv" est le nom court
 ```
 
-### Vérifier l'état
+### Suivre l'état
 
 ```bash
-kubectl get previewenvironment pr-1234-checkout-api -o yaml
+kubectl get penv pr-1234-checkout-api -o jsonpath='{.status}' | jq
+kubectl describe penv pr-1234-checkout-api      # conditions + événements
 ```
 
 ```yaml
@@ -93,22 +152,33 @@ status:
   phase: Running
   namespace: preview-pr-1234-checkout-api
   helmReleaseName: pr-1234-checkout-api
-  expiresAt: "2026-09-21T18:06:00Z"
+  observedRevision: pr-1234-abc123
+  observedGeneration: 1
+  expiresAt: "2026-09-28T12:06:27Z"
   conditions:
     - type: Ready
       status: "True"
       reason: HelmReleaseDeployed
 ```
 
-### Supprimer l'environnement
+### Mettre à jour
 
-Soit on laisse le TTL expirer, soit on supprime directement la CRD (en général fait par la CI à la fermeture de la PR) :
+Toute modification du `spec` déclenche un `helm upgrade` :
 
 ```bash
-kubectl delete previewenvironment pr-1234-checkout-api
+kubectl patch penv pr-1234-checkout-api --type merge \
+  -p '{"spec":{"source":{"revision":"pr-1234-def456"}}}'
 ```
 
-## Intégration CI (exemple GitLab)
+### Supprimer
+
+Laisser expirer le TTL, ou supprimer la CRD (typiquement fait par la CI à la fermeture de la PR) :
+
+```bash
+kubectl delete penv pr-1234-checkout-api
+```
+
+### Intégration CI (exemple GitLab)
 
 ```yaml
 deploy_preview:
@@ -123,80 +193,215 @@ cleanup_preview:
   script:
     - kubectl delete previewenvironment pr-${CI_MERGE_REQUEST_IID}-checkout-api --ignore-not-found
   rules:
-    - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "detached"'
-      when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: manual
 ```
 
+Le compte de service de la CI n'a besoin que des droits sur les `PreviewEnvironment` du namespace de gestion (rôle `previewenvironment-editor` fourni dans `config/rbac/`), jamais d'un accès direct aux namespaces `preview-*`.
+
 ## Référence de l'API
 
-| Champ | Type | Description |
+Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `penv`).
+
+### Spec
+
+| Champ | Type | Obligatoire | Validation | Description |
+|---|---|---|---|---|
+| `source.repo` | string | ✅ | `^https://(gitlab\.internal\|github\.internal)/.+$` | Dépôt Git du chart — hôtes internes uniquement |
+| `source.chartPath` | string | ✅ | non vide, doit rester dans le dépôt | Chemin du chart dans le dépôt |
+| `source.revision` | string | ✅ | `^[A-Za-z0-9][A-Za-z0-9._/-]*$`, ≤ 255 | Commit, branche ou tag |
+| `prNumber` | int | ✅ | ≥ 1, **immuable** | Numéro de la Pull Request |
+| `appName` | string | ✅ | label DNS en minuscules, ≤ 40 | Nom de l'application |
+| `valuesOverride` | object | | libre | Values Helm appliquées par-dessus celles du chart |
+| `ttl` | string | ✅ | heures entières (`48h`), **≤ 168h** | Durée de vie avant suppression |
+| `metadata.name` | string | ✅ | ≤ 53 caractères | Sert de nom de release Helm |
+
+> **Adapter `source.repo`** : le motif par défaut n'accepte que les hôtes d'exemple `gitlab.internal` / `github.internal`. Remplacez-le par vos vrais hôtes Git internes dans `api/v1alpha1/previewenvironment_types.go`, puis `make manifests`.
+
+### Status
+
+| Champ | Description |
+|---|---|
+| `phase` | `Pending` \| `Provisioning` \| `Running` \| `Expiring` \| `Terminating` \| `Failed` |
+| `namespace` | Namespace de l'environnement |
+| `helmReleaseName` | Nom de la release Helm |
+| `observedRevision` | Dernière révision déployée avec succès |
+| `observedGeneration` | Dernière génération du `spec` déployée (différente de `metadata.generation` → upgrade) |
+| `expiresAt` | Date d'expiration calculée |
+| `cleanupStartedAt` | Début du nettoyage (pour le délai maximal du finalizer) |
+| `conditions[Ready]` | État détaillé : `reason` + `message` en cas d'erreur |
+
+## Sécurité
+
+| Mesure | Détail |
+|---|---|
+| **Isolation réseau** | `NetworkPolicy` `ephora-default` dans chaque namespace : entrée depuis le namespace et le cluster, sortie limitée au DNS et au cluster — pas d'Internet |
+| **Quotas** | `ResourceQuota` (2 CPU / 4 Gi demandés, 4 CPU / 8 Gi max, 20 pods) + `LimitRange` (valeurs par défaut par conteneur) |
+| **Source des charts** | Liste blanche d'hôtes Git dans le schéma de la CRD |
+| **Injection d'arguments git** | Révision commençant par `-` refusée (CRD + code), `git checkout <rev> --` |
+| **Traversée de chemin** | `chartPath` sortant du dépôt cloné (`../..`) refusé |
+| **Coût** | TTL borné à 168h au niveau du schéma |
+| **Image** | Utilisateur non-root numérique (65532), capacités supprimées, système de fichiers en lecture seule (`/tmp` en `emptyDir` de 1 Gi) |
+| **RBAC** | Rôle généré (`role.yaml`) pour la CRD/namespaces/garde-fous + rôle maintenu à la main (`role_helm_workloads.yaml`) pour les ressources des charts — sans Ingress ni RBAC |
+| **Secrets** | Aucun secret de production dans `valuesOverride` ni dans les namespaces de preview |
+| **Supply chain** | CI : `govulncheck`, scan Trivy de l'image (bloquant sur HIGH/CRITICAL corrigeables) et des manifestes ; Dependabot |
+
+**Limites connues** (à traiter avant la production) :
+
+- Le rôle Helm donne accès aux `secrets` **sur tout le cluster** → à restreindre aux namespaces `preview-*`.
+- La `NetworkPolicy` accepte l'entrée depuis **tous** les namespaces → à limiter à la passerelle interne (VPN, ingress interne).
+- Pas encore d'authentification Git : seuls les dépôts accessibles sans identifiants sont clonables.
+
+Détails : [DAT §5](dat-ephora-operator.md) et [ADRs](adrs-ephora-operator.md).
+
+## Observabilité
+
+Métriques Prometheus exposées sur `:8080/metrics` :
+
+| Métrique | Type | Description |
 |---|---|---|
-| `spec.source.repo` | string | URL du dépôt Git qui héberge le chart Helm de l'application (dépôts internes uniquement) |
-| `spec.source.chartPath` | string | Chemin du chart dans le dépôt |
-| `spec.source.revision` | string | Révision du chart/de l'app à déployer (SHA de commit, tag) |
-| `spec.prNumber` | int | Numéro de la Pull Request (immuable) |
-| `spec.appName` | string | Nom de l'application, utilisé pour construire le namespace |
-| `spec.valuesOverride` | object | Surcharge des values Helm appliquée par-dessus les valeurs par défaut du chart |
-| `spec.ttl` | duration | Durée de vie avant suppression automatique (ex. `48h`) |
-| `status.phase` | string | `Pending` \| `Provisioning` \| `Running` \| `Expiring` \| `Terminating` \| `Failed` |
-| `status.namespace` | string | Namespace créé pour cet environnement |
-| `status.expiresAt` | timestamp | Date d'expiration calculée |
+| `preview_environments_active` | gauge | Environnements en phase `Running` (recalculé à chaque balayage) |
+| `preview_environment_provisioning_duration_seconds` | histogram | Délai création → premier `Running` (objectif < 3 min) |
+| `preview_environment_cleanup_total{reason}` | counter | Nettoyages par raison : `deleted`, `ttl_expired`, `orphan_sweep` |
 
-## Modèle de sécurité
+Les erreurs sont aussi remontées en **événements Kubernetes** (`kubectl describe penv …`) et dans la condition `Ready`.
 
-- `NetworkPolicy` default-deny dans chaque namespace d'environnement.
-- `ResourceQuota`/`LimitRange` appliqués par défaut pour borner la consommation de ressources.
-- `spec.source.repo` restreint à une liste blanche d'hôtes Git internes.
-- Aucun secret de production n'est jamais injecté — les environnements de preview n'utilisent que des valeurs de test/mock.
+## Configuration de l'opérateur
 
-Voir [`docs/dat-ephora-operator.md`](docs/dat-ephora-operator.md) pour l'architecture technique complète et [`docs/adrs-ephora-operator.md`](docs/adrs-ephora-operator.md) pour les décisions d'architecture (ADR).
+| Flag | Défaut | Description |
+|---|---|---|
+| `--metrics-bind-address` | `:8080` | Adresse des métriques |
+| `--health-probe-bind-address` | `:8081` | Sondes `/healthz` et `/readyz` |
+| `--leader-elect` | `false` | Élection de leader (obligatoire au-delà d'un réplica) |
+| `--orphan-sweep-interval` | `30m` | Fréquence du balayage des namespaces orphelins |
+| `--cleanup-timeout` | `10m` | Attente maximale de la suppression du namespace avant de libérer le finalizer |
+| `--zap-devel`, `--zap-log-level`… | | Options de logs ([zap](https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/log/zap)) |
+
+## Déploiement dans un cluster
+
+```bash
+# Image
+make docker-build IMG=<registry>/ephora-operator:v0.1.0
+make docker-push  IMG=<registry>/ephora-operator:v0.1.0
+# (kind : kind load docker-image <registry>/ephora-operator:v0.1.0 --name ephora)
+
+# CRD + RBAC + opérateur dans le namespace ephora-operator-system
+make deploy IMG=<registry>/ephora-operator:v0.1.0
+
+# Désinstallation
+make undeploy
+```
 
 ## Développement
 
 ### Prérequis
 
-| Outil | Version | Utilisé pour |
+| Outil | Version | Usage |
 |---|---|---|
-| [Go](https://go.dev/dl/) | >= 1.26 (voir `go.mod`) | compiler le manager, `make test` |
-| GNU `make` | toute version | toutes les cibles du Makefile |
-| [Docker](https://docs.docker.com/get-docker/) | récente | `make docker-build` |
-| [kubectl](https://kubernetes.io/docs/tasks/tools/) | compatible avec votre cluster | `make install`, `make deploy` |
-| [kind](https://kind.sigs.k8s.io/) (ou tout autre cluster) | récente | cluster local pour `make install` / `make run` |
-| [kustomize](https://kubectl.docs.kubernetes.io/installation/kustomize/) | v5.x | `make install`, `make deploy` |
-| [Helm](https://helm.sh/docs/intro/install/) | v3 | tester les charts applicatifs déployés par l'opérateur |
-| git | toute version | cloner le dépôt ; aussi utilisé par le reconciler pour récupérer les charts |
+| [Go](https://go.dev/dl/) | 1.26 (dernier correctif) | Compilation, tests |
+| GNU `make` | — | Toutes les cibles |
+| [Docker](https://docs.docker.com/get-docker/) | récent | Image, kind |
+| [kind](https://kind.sigs.k8s.io/) | récent | Cluster local |
+| [kubectl](https://kubernetes.io/docs/tasks/tools/) | compatible avec le cluster | |
+| [Helm](https://helm.sh/docs/intro/install/) | v3 | Inspection des releases |
+| [golangci-lint](https://golangci-lint.run/) | v2 | Lint |
+| git | ≥ 2.24 | Clone des charts (aussi requis à l'exécution) |
 
-`controller-gen` (v0.16.5) et `setup-envtest` sont installés automatiquement dans `./bin` par le Makefile.
-`operator-sdk` n'est nécessaire que pour `make bundle` (packaging OLM) et est téléchargé à la demande — il n'existe pas de version Windows, utilisez WSL pour cette cible.
+`controller-gen`, `setup-envtest` et `kustomize` sont téléchargés automatiquement dans `./bin` par le Makefile.
 
-**Windows** : installez tout ce qui précède en une fois avec Chocolatey, depuis un PowerShell administrateur :
+**Linux / WSL (recommandé)** — installe toute la boîte à outils d'opérateurs dans `~/.local`, sans `sudo` (réutilisable pour d'autres projets) :
+
+```bash
+bash hack/install-dev-tools.sh            # installe ce qui manque
+bash hack/install-dev-tools.sh --upgrade  # met tout à jour
+source ~/.bashrc
+```
+
+**Windows** (PowerShell administrateur, via Chocolatey) :
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File hack\install-dev-tools.ps1
 ```
 
-Lancez ensuite les cibles `make` depuis Git Bash (le Makefile utilise `uname`/`pwd`).
+> Sous WSL, travaillez de préférence dans le système de fichiers Linux (`~/…`) plutôt que sous `/mnt/c` : la compilation Go y est nettement plus rapide.
 
-**Linux/macOS** : installez les outils avec votre gestionnaire de paquets (ex. `brew install go make kubectl kind kustomize helm`).
+### Commandes
 
-### Premiers pas
+| Commande | Description |
+|---|---|
+| `make run` | Lance l'opérateur en local contre le contexte kube courant (logs lisibles) |
+| `make test` | Tests unitaires + envtest (API server local) |
+| `make install` / `make uninstall` | Installe / retire la CRD |
+| `make install-dev` | CRD de développement (kind uniquement) |
+| `make manifests` | Régénère CRD et `role.yaml` depuis les marqueurs `+kubebuilder` |
+| `make generate` | Régénère `zz_generated.deepcopy.go` |
+| `make build` | Compile `bin/manager` |
+| `make docker-build IMG=…` | Construit l'image |
+| `make deploy IMG=…` / `make undeploy` | Déploie / retire l'opérateur dans le cluster |
+| `golangci-lint run ./...` | Lint |
+
+> Ne modifiez jamais `config/rbac/role.yaml` à la main : il est régénéré par `make manifests`. Les droits des charts se trouvent dans `config/rbac/role_helm_workloads.yaml`.
+
+### Tests
 
 ```bash
-git clone https://github.com/<org>/ephora-operator.git
-cd ephora-operator
-kind create cluster   # inutile si vous avez déjà un cluster dans votre contexte kube
-make install          # installe les CRD
-make run              # lance l'opérateur en local contre le contexte kube courant
-make test             # lance les tests unitaires/d'intégration (envtest)
+make test
 ```
+
+- **Unitaires** : nom du namespace, décodage des values, récupération du chart depuis un dépôt Git local (injection d'options, traversée de chemin, nettoyage des fichiers temporaires).
+- **envtest** : provisionnement des garde-fous, chemin `Failed`, suppression par finalizer, expiration TTL, métriques, et règles de validation de la CRD.
+
+Les tests sont **hors ligne** (`GIT_ALLOW_PROTOCOL=file`) : aucun accès réseau.
+
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml), sur chaque Pull Request et sur `main` :
+
+| Job | Contenu |
+|---|---|
+| Test | `make test` + vérification que les fichiers générés sont commités |
+| Lint | `golangci-lint` + `govulncheck` |
+| Image | Build Docker + Trivy (image bloquant, manifestes informatif) → onglet *Security* |
+
+### Structure du projet
+
+```
+api/v1alpha1/            Types de la CRD (spec, status, validations)
+cmd/main.go              Point d'entrée (manager, flags)
+internal/controller/
+  previewenvironment_controller.go   Réconciliation, TTL, finalizer
+  namespace.go                       Namespace, NetworkPolicy, quotas
+  helmchart.go                       Clone Git + SDK Helm
+  orphansweeper.go                   Balayage des namespaces orphelins
+  metrics.go                         Métriques Prometheus
+config/
+  crd/        CRD générée             rbac/     Rôles (générés + Helm)
+  manager/    Déploiement             default/  Kustomize de déploiement
+  dev/        CRD de dev + exemple    samples/  Exemple de PreviewEnvironment
+hack/                    Scripts d'installation des outils
+```
+
+### Documentation d'architecture
+
+- [dat-ephora-operator.md](dat-ephora-operator.md) — Document d'architecture technique (composants, API, réconciliation, sécurité, exigences non fonctionnelles)
+- [adrs-ephora-operator.md](adrs-ephora-operator.md) — Décisions d'architecture (ADR-01 à ADR-04)
 
 ## Feuille de route
 
-- [ ] Ingress public dynamique + intégration cert-manager (optionnel)
-- [ ] Commentaire automatique sur la PR avec l'état/le lien de l'environnement
-- [ ] Tableau de bord FinOps d'utilisation
+**V1 (en cours)**
+
+- [x] CRD, réconciliation, TTL, finalizer, balayage des orphelins
+- [x] Garde-fous par namespace (NetworkPolicy, quotas)
+- [x] Tests unitaires + envtest, CI DevSecOps
+- [ ] Restreindre le RBAC Helm et la NetworkPolicy
+- [ ] Authentification Git pour les dépôts privés
+- [ ] Test de bout en bout de l'opérateur déployé dans le cluster
+
+**V2** (derrière un flag, hors du chemin V1 par défaut)
+
+- [ ] Ingress dynamique + cert-manager (ADR-03)
+- [ ] Commentaire automatique sur la PR avec l'état de l'environnement
+- [ ] Tableau de bord FinOps
 
 ## Licence
 
