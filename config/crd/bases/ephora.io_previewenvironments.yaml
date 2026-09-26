@@ -93,7 +93,7 @@ spec:
                       NOTE: adjust this pattern to your organization's real internal Git
                       host(s) before going to production — the default only matches the
                       placeholder hosts used in the DAT/README examples.
-                    pattern: ^https://(gitlab\.internal|github\.internal)/.+$
+                    pattern: ^https://github\.internal/.+$
                     type: string
                   revision:
                     description: |-

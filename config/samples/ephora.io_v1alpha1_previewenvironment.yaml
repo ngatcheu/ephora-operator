@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
 spec:
   source:
-    repo: "https://gitlab.internal/checkout/checkout-api"
+    repo: "https://github.internal/checkout/checkout-api"
     chartPath: "charts/app"
     revision: "pr-1234-abc123"
   prNumber: 1234

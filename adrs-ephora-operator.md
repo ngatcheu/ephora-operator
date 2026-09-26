@@ -28,7 +28,7 @@ Utilisation d'**Operator SDK avec le plugin Helm** (`operator-sdk init --plugins
 Accepté
 
 ### Contexte
-La CI (GitLab CI) doit déclencher la création de l'environnement à l'ouverture/mise à jour d'une PR, et sa destruction à la fermeture. Deux options : la CI applique/supprime directement le CRD via `kubectl`, ou l'opérateur expose un endpoint HTTP dédié.
+La CI (GitHub Actions) doit déclencher la création de l'environnement à l'ouverture/mise à jour d'une PR, et sa destruction à la fermeture. Deux options : la CI applique/supprime directement le CRD via `kubectl`, ou l'opérateur expose un endpoint HTTP dédié.
 
 ### Décision
 La CI effectue un `kubectl apply` / `kubectl delete` du CRD `PreviewEnvironment` directement, sans composant intermédiaire.

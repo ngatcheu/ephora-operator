@@ -20,7 +20,7 @@ Les environnements de preview par Pull Request sont aujourd'hui soit absents (te
 
 ```
 ┌────────────┐   kubectl apply/delete CRD   ┌──────────────────────────┐
-│  CI GitLab │ ───────────────────────────► │  Cluster Kubernetes       │
+│ CI GitHub  │ ───────────────────────────► │  Cluster Kubernetes       │
 │  (PR event)│                               │  (namespace de gestion)   │
 └────────────┘                               │                            │
                                               │  ┌──────────────────────┐ │
@@ -47,7 +47,7 @@ Les environnements de preview par Pull Request sont aujourd'hui soit absents (te
 | **Contrôleur (Operator SDK / Helm)** | Réconcilie le CRD : déploie/détruit le chart, gère le namespace, applique le TTL |
 | **Namespace de gestion** | Héberge l'opérateur et les CRD ; distinct des namespaces `preview-*` |
 | **Namespace `preview-pr-<n>-<app>`** | Isolation par environnement (cf. ADR-04), supprimé à l'expiration |
-| **CI GitLab** | Déclenche création/suppression via `kubectl apply`/`delete` (cf. ADR-02) |
+| **CI GitHub Actions** | Déclenche création/suppression via `kubectl apply`/`delete` (cf. ADR-02) |
 
 ## 3. Spécification de l'API (CRD)
 
@@ -58,7 +58,7 @@ metadata:
   name: pr-1234-checkout-api
 spec:
   source:
-    repo: "https://gitlab.internal/checkout/checkout-api"
+    repo: "https://github.internal/checkout/checkout-api"
     chartPath: "charts/app"
     revision: "pr-1234-abc123"
   prNumber: 1234
@@ -125,7 +125,7 @@ status:
 ## 8. Roadmap V2 (hors périmètre actuel)
 
 - Exposition publique via Ingress dynamique + cert-manager (lié à ADR-03).
-- Intégration d'un commentaire automatique sur la PR GitLab avec le lien/statut de l'environnement.
+- Intégration d'un commentaire automatique sur la PR GitHub avec le lien/statut de l'environnement.
 - Dashboard FinOps agrégeant les métriques d'usage cumulé des environnements éphémères.
 
 ## 9. Références
