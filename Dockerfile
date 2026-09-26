@@ -2,7 +2,7 @@
 # Build the manager binary
 # --platform=$BUILDPLATFORM: compile natively and cross-compile via GOOS/GOARCH
 # instead of emulating every target platform under `make docker-buildx`.
-FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
