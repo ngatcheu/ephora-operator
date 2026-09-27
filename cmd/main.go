@@ -43,6 +43,7 @@ func main() {
 	var enableLeaderElection bool
 	var orphanSweepInterval time.Duration
 	var cleanupTimeout time.Duration
+	var deployerClusterRole string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the health/readiness probes bind to.")
@@ -52,6 +53,9 @@ func main() {
 		"How often to sweep for orphaned preview namespaces (DAT §4.5).")
 	flag.DurationVar(&cleanupTimeout, "cleanup-timeout", controller.DefaultCleanupTimeout,
 		"How long the cleanup finalizer waits for namespace teardown before force-releasing (DAT §7).")
+	flag.StringVar(&deployerClusterRole, "deployer-cluster-role", controller.DefaultDeployerClusterRole,
+		"ClusterRole bound, in each preview namespace, to the identity Helm runs as. "+
+			"Must match the `bind` resourceName in the operator's RBAC.")
 
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
@@ -75,11 +79,12 @@ func main() {
 	}
 
 	if err = (&controller.PreviewEnvironmentReconciler{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		RESTConfig:     mgr.GetConfig(),
-		Recorder:       mgr.GetEventRecorder("ephora-operator"),
-		CleanupTimeout: cleanupTimeout,
+		Client:              mgr.GetClient(),
+		Scheme:              mgr.GetScheme(),
+		RESTConfig:          mgr.GetConfig(),
+		Recorder:            mgr.GetEventRecorder("ephora-operator"),
+		CleanupTimeout:      cleanupTimeout,
+		DeployerClusterRole: deployerClusterRole,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PreviewEnvironment")
 		os.Exit(1)

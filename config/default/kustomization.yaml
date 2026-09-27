@@ -4,4 +4,7 @@ namePrefix: ephora-operator-
 resources:
 - ../crd
 - ../rbac
+# Rights of the per-namespace Helm identity (bound by the operator in each
+# preview namespace, never cluster-wide).
+- ../deployer
 - ../manager

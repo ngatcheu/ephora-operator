@@ -1,0 +1,8 @@
+# Cluster-scoped prerequisites for running the operator OUTSIDE the cluster
+# (`make run`), installed by `make install` / `make install-dev` next to the
+# CRD. Same name prefix as config/default so the deployer ClusterRole name
+# matches DefaultDeployerClusterRole.
+namePrefix: ephora-operator-
+
+resources:
+- ../deployer

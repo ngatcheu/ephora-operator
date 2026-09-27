@@ -215,6 +215,47 @@ func TestReconcileTTLExpiryDeletesEnvironment(t *testing.T) {
 	}
 }
 
+// Two PreviewEnvironments with the same prNumber/appName derive the same
+// namespace: the second must be refused, and deleting it must not tear down
+// the first one's environment.
+func TestReconcileRefusesSharedNamespace(t *testing.T) {
+	requireEnvtest(t)
+	ctx := context.Background()
+	r := newTestReconciler(t)
+	nsName := "preview-pr-104-shared"
+
+	owner := newTestPE(t, ctx, "pr-104-owner", 104, "shared")
+	_ = reconcileOnce(ctx, r, client.ObjectKeyFromObject(owner)) // creates the namespace (chart fetch fails)
+
+	intruder := newTestPE(t, ctx, "pr-104-intruder", 104, "shared")
+	ikey := client.ObjectKeyFromObject(intruder)
+	if err := reconcileOnce(ctx, r, ikey); err == nil {
+		t.Fatal("reconcile of the second PreviewEnvironment: expected an error, got nil")
+	}
+	ready := meta.FindStatusCondition(getPE(t, ctx, ikey).Status.Conditions, ephoraiov1alpha1.ConditionTypeReady)
+	if ready == nil || ready.Reason != "NamespaceReconcileFailed" {
+		t.Errorf("Ready condition = %+v, want reason NamespaceReconcileFailed", ready)
+	}
+
+	if err := k8sClient.Delete(ctx, getPE(t, ctx, ikey)); err != nil {
+		t.Fatalf("deleting the second PreviewEnvironment: %v", err)
+	}
+	if err := reconcileOnce(ctx, r, ikey); err != nil {
+		t.Fatalf("cleanup reconcile: %v", err)
+	}
+	if err := k8sClient.Get(ctx, ikey, &ephoraiov1alpha1.PreviewEnvironment{}); !apierrors.IsNotFound(err) {
+		t.Errorf("second PreviewEnvironment still present after cleanup (err = %v)", err)
+	}
+
+	ns := &corev1.Namespace{}
+	if err := k8sClient.Get(ctx, types.NamespacedName{Name: nsName}, ns); err != nil {
+		t.Fatalf("getting the owner's namespace: %v", err)
+	}
+	if ns.DeletionTimestamp != nil {
+		t.Error("the owner's namespace was deleted when the second PreviewEnvironment was removed")
+	}
+}
+
 // TestCRDValidation guards the schema-level security/cost controls from
 // CLAUDE.md: TTL bound, repo allow-list, revision format, immutable prNumber,
 // and the Helm release name length limit.

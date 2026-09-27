@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -71,7 +72,12 @@ func (r *PreviewEnvironmentReconciler) resolveChart(ctx context.Context, source 
 	cloneCtx, cancel := context.WithTimeout(ctx, gitCloneTimeout)
 	defer cancel()
 
-	if err := runGit(cloneCtx, "", "clone", "--quiet", "--", source.Repo, workDir); err != nil {
+	// core.symlinks=false (persisted in the clone's config, so it also applies
+	// to the checkout below): symlinks are checked out as plain files holding
+	// the link target. The chart comes from the PR author and Helm's loader
+	// follows symlinks, so a link to e.g. the operator's ServiceAccount token
+	// would otherwise be readable through .Files.Get.
+	if err := runGit(cloneCtx, "", "clone", "--quiet", "--config", "core.symlinks=false", "--", source.Repo, workDir); err != nil {
 		cleanup()
 		return nil, nil, fmt.Errorf("cloning %s: %w", source.Repo, err)
 	}
@@ -130,12 +136,19 @@ func helmValues(raw *ephoraiov1alpha1.PreviewEnvironmentSpec) (map[string]interf
 	return values, nil
 }
 
-// newActionConfig builds a Helm action.Configuration scoped to namespace,
-// backed by the operator's own in-cluster REST config (no separate
-// kubeconfig/credentials — same identity as the operator's ServiceAccount,
-// per the RBAC model in DAT §5).
+// newActionConfig builds a Helm action.Configuration scoped to namespace.
+//
+// Helm impersonates the namespace's DeployerServiceAccount instead of using
+// the operator's own identity: every API call made while rendering and
+// applying the (PR-author controlled) chart — including Helm `lookup` and
+// resources with an explicit metadata.namespace — is authorized against that
+// account's namespace-only RoleBinding.
 func (r *PreviewEnvironmentReconciler) newActionConfig(namespace string, logger func(format string, v ...interface{})) (*action.Configuration, error) {
-	getter := &restClientGetter{restConfig: r.RESTConfig, namespace: namespace}
+	restConfig := rest.CopyConfig(r.RESTConfig)
+	restConfig.Impersonate = rest.ImpersonationConfig{
+		UserName: fmt.Sprintf("system:serviceaccount:%s:%s", namespace, DeployerServiceAccount),
+	}
+	getter := &restClientGetter{restConfig: restConfig, namespace: namespace}
 	cfg := new(action.Configuration)
 	if err := cfg.Init(getter, namespace, "secrets", logger); err != nil {
 		return nil, fmt.Errorf("initializing helm action config: %w", err)
@@ -143,36 +156,61 @@ func (r *PreviewEnvironmentReconciler) newActionConfig(namespace string, logger 
 	return cfg, nil
 }
 
+// helmMaxHistory caps stored release revisions (one Secret each) so a
+// long-lived, frequently updated environment doesn't accumulate them.
+const helmMaxHistory = 10
+
 // installOrUpgrade deploys ch as releaseName into namespace, installing if no
 // release exists yet and upgrading otherwise (DAT §4.1, §4.3).
+//
+// A release that can't be upgraded is reinstalled from scratch — acceptable
+// for an ephemeral preview environment:
+//   - pending-* : a previous operation was interrupted (e.g. operator
+//     restart mid-deploy); Helm would refuse any new operation forever;
+//   - never successfully deployed (first install failed): Helm refuses to
+//     upgrade a release with no deployed revision.
 func installOrUpgrade(cfg *action.Configuration, releaseName, namespace string, ch *chart.Chart, values map[string]interface{}) (*release.Release, error) {
-	hist := action.NewHistory(cfg)
-	hist.Max = 1
-	_, err := hist.Run(releaseName)
-
+	latest, err := cfg.Releases.Last(releaseName)
 	switch {
-	case err == driver.ErrReleaseNotFound:
-		install := action.NewInstall(cfg)
-		install.ReleaseName = releaseName
-		install.Namespace = namespace
-		install.CreateNamespace = false // the reconciler owns namespace lifecycle
-		install.Timeout = 3 * time.Minute
-		return install.Run(ch, values)
+	case errors.Is(err, driver.ErrReleaseNotFound):
+		return installRelease(cfg, releaseName, namespace, ch, values)
 	case err != nil:
 		return nil, fmt.Errorf("checking release history for %s: %w", releaseName, err)
-	default:
-		upgrade := action.NewUpgrade(cfg)
-		upgrade.Namespace = namespace
-		upgrade.Timeout = 3 * time.Minute
-		return upgrade.Run(releaseName, ch, values)
 	}
+
+	if latest.Info.Status.IsPending() || !hasDeployedRevision(cfg, releaseName) {
+		if err := uninstallRelease(cfg, releaseName); err != nil {
+			return nil, fmt.Errorf("resetting release %s (status %s): %w", releaseName, latest.Info.Status, err)
+		}
+		return installRelease(cfg, releaseName, namespace, ch, values)
+	}
+
+	upgrade := action.NewUpgrade(cfg)
+	upgrade.Namespace = namespace
+	upgrade.Timeout = 3 * time.Minute
+	upgrade.MaxHistory = helmMaxHistory
+	return upgrade.Run(releaseName, ch, values)
+}
+
+func installRelease(cfg *action.Configuration, releaseName, namespace string, ch *chart.Chart, values map[string]interface{}) (*release.Release, error) {
+	install := action.NewInstall(cfg)
+	install.ReleaseName = releaseName
+	install.Namespace = namespace
+	install.CreateNamespace = false // the reconciler owns namespace lifecycle
+	install.Timeout = 3 * time.Minute
+	return install.Run(ch, values)
+}
+
+func hasDeployedRevision(cfg *action.Configuration, releaseName string) bool {
+	_, err := cfg.Releases.Deployed(releaseName)
+	return err == nil
 }
 
 // uninstallRelease removes releaseName, tolerating it already being gone.
 func uninstallRelease(cfg *action.Configuration, releaseName string) error {
 	uninstall := action.NewUninstall(cfg)
 	_, err := uninstall.Run(releaseName)
-	if err != nil && err != driver.ErrReleaseNotFound {
+	if err != nil && !errors.Is(err, driver.ErrReleaseNotFound) {
 		return fmt.Errorf("uninstalling release %s: %w", releaseName, err)
 	}
 	return nil

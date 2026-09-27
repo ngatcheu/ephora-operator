@@ -44,6 +44,13 @@ func (s *OrphanSweeper) Start(ctx context.Context) error {
 	}
 	logger := log.FromContext(ctx).WithName("orphan-sweeper")
 
+	// Sweep once right away: catches orphans left while the operator was down
+	// and restores an accurate preview_environments_active after a restart,
+	// instead of waiting a full interval.
+	if err := s.sweep(ctx); err != nil {
+		logger.Error(err, "orphan sweep failed")
+	}
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 

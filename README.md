@@ -25,6 +25,7 @@
 - [Déploiement dans un cluster](#déploiement-dans-un-cluster)
 - [Développement](#développement)
 - [Feuille de route](#feuille-de-route)
+- [Liens utiles](#liens-utiles)
 
 ---
 
@@ -274,15 +275,17 @@ Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `pe
 | **Source des charts** | Liste blanche d'hôtes Git dans le schéma de la CRD |
 | **Injection d'arguments git** | Révision commençant par `-` refusée (CRD + code), `git checkout <rev> --` |
 | **Traversée de chemin** | `chartPath` sortant du dépôt cloné (`../..`) refusé |
+| **Liens symboliques** | Clone avec `core.symlinks=false` : un lien dans le chart ne peut pas exposer un fichier de l'opérateur (ex. son jeton de ServiceAccount) |
+| **Isolation des environnements** | Un namespace n'est utilisé et supprimé que par le `PreviewEnvironment` qui l'a créé (deux objets avec le même `prNumber`/`appName` ne le partagent pas) |
 | **Coût** | TTL borné à 168h au niveau du schéma |
 | **Image** | Utilisateur non-root numérique (65532), capacités supprimées, système de fichiers en lecture seule (`/tmp` en `emptyDir` de 1 Gi) |
-| **RBAC** | Rôle généré (`role.yaml`) pour la CRD/namespaces/garde-fous + rôle maintenu à la main (`role_helm_workloads.yaml`) pour les ressources des charts — sans Ingress ni RBAC |
+| **Identité de déploiement** | Le chart vient de l'auteur de la PR : Helm ne tourne **pas** avec les droits de l'opérateur mais en se faisant passer (*impersonation*) pour le ServiceAccount `ephora-deployer` du namespace, lié au ClusterRole `ephora-operator-preview-deployer` **par un RoleBinding local**. Un chart ne peut donc ni déployer dans un autre namespace, ni lire les secrets d'un autre namespace (`lookup`), ni créer de ressources cluster, d'Ingress ou de RBAC |
+| **RBAC de l'opérateur** | Aucun droit sur les ressources des charts : il gère la CRD, les namespaces et leurs garde-fous, crée le ServiceAccount et le RoleBinding de chaque namespace (`bind` limité au ClusterRole de déploiement) et ne peut emprunter que l'identité `ephora-deployer` |
 | **Secrets** | Aucun secret de production dans `valuesOverride` ni dans les namespaces de preview |
 | **Supply chain** | CI : `govulncheck`, scan Trivy de l'image (bloquant sur HIGH/CRITICAL corrigeables) et des manifestes ; Dependabot |
 
 **Limites connues** (à traiter avant la production) :
 
-- Le rôle Helm donne accès aux `secrets` **sur tout le cluster** → à restreindre aux namespaces `preview-*`.
 - La `NetworkPolicy` accepte l'entrée depuis **tous** les namespaces → à limiter à la passerelle interne (VPN, ingress interne).
 - Pas encore d'authentification Git : seuls les dépôts accessibles sans identifiants sont clonables.
 
@@ -309,6 +312,7 @@ Les erreurs sont aussi remontées en **événements Kubernetes** (`kubectl descr
 | `--leader-elect` | `false` | Élection de leader (obligatoire au-delà d'un réplica) |
 | `--orphan-sweep-interval` | `30m` | Fréquence du balayage des namespaces orphelins |
 | `--cleanup-timeout` | `10m` | Attente maximale de la suppression du namespace avant de libérer le finalizer |
+| `--deployer-cluster-role` | `ephora-operator-preview-deployer` | ClusterRole lié à l'identité Helm dans chaque namespace (doit correspondre au `bind` du RBAC de l'opérateur) |
 | `--zap-devel`, `--zap-log-level`… | | Options de logs ([zap](https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/log/zap)) |
 
 ## Déploiement dans un cluster
@@ -365,7 +369,7 @@ powershell -ExecutionPolicy Bypass -File hack\install-dev-tools.ps1
 |---|---|
 | `make run` | Lance l'opérateur en local contre le contexte kube courant (logs lisibles) |
 | `make test` | Tests unitaires + envtest (API server local) |
-| `make install` / `make uninstall` | Installe / retire la CRD |
+| `make install` / `make uninstall` | Installe / retire la CRD et le ClusterRole de déploiement |
 | `make install-dev` | CRD de développement (kind uniquement) |
 | `make manifests` | Régénère CRD et `role.yaml` depuis les marqueurs `+kubebuilder` |
 | `make generate` | Régénère `zz_generated.deepcopy.go` |
@@ -374,7 +378,7 @@ powershell -ExecutionPolicy Bypass -File hack\install-dev-tools.ps1
 | `make deploy IMG=…` / `make undeploy` | Déploie / retire l'opérateur dans le cluster |
 | `golangci-lint run ./...` | Lint |
 
-> Ne modifiez jamais `config/rbac/role.yaml` à la main : il est régénéré par `make manifests`. Les droits des charts se trouvent dans `config/rbac/role_helm_workloads.yaml`.
+> Ne modifiez jamais `config/rbac/role.yaml` à la main : il est régénéré par `make manifests`. Les droits accordés aux charts se trouvent dans `config/deployer/role.yaml`.
 
 ### Tests
 
@@ -409,7 +413,8 @@ internal/controller/
   orphansweeper.go                   Balayage des namespaces orphelins
   metrics.go                         Métriques Prometheus
 config/
-  crd/        CRD générée             rbac/     Rôles (générés + Helm)
+  crd/        CRD générée             rbac/     RBAC de l'opérateur (généré)
+  deployer/   Droits des charts       local/    Prérequis pour `make run`
   manager/    Déploiement             default/  Kustomize de déploiement
   dev/        CRD de dev + exemple    samples/  Exemple de PreviewEnvironment
 hack/                    Scripts d'installation des outils
@@ -427,7 +432,8 @@ hack/                    Scripts d'installation des outils
 - [x] CRD, réconciliation, TTL, finalizer, balayage des orphelins
 - [x] Garde-fous par namespace (NetworkPolicy, quotas)
 - [x] Tests unitaires + envtest, CI DevSecOps
-- [ ] Restreindre le RBAC Helm et la NetworkPolicy
+- [x] Helm exécuté avec une identité limitée au namespace
+- [ ] Restreindre l'entrée de la NetworkPolicy à la passerelle interne
 - [ ] Authentification Git pour les dépôts privés
 - [ ] Test de bout en bout de l'opérateur déployé dans le cluster
 
@@ -436,6 +442,50 @@ hack/                    Scripts d'installation des outils
 - [ ] Ingress dynamique + cert-manager (ADR-03)
 - [ ] Commentaire automatique sur la PR avec l'état de l'environnement
 - [ ] Tableau de bord FinOps
+
+## Liens utiles
+
+### Projet
+
+| Lien | Contenu |
+|---|---|
+| [Actions](https://github.com/ngatcheu/ephora-operator/actions) | Exécutions de la CI |
+| [Pull Requests](https://github.com/ngatcheu/ephora-operator/pulls) | Changements en cours de revue |
+| [Issues](https://github.com/ngatcheu/ephora-operator/issues) | Bugs et demandes d'évolution |
+| [Code scanning](https://github.com/ngatcheu/ephora-operator/security/code-scanning) | Résultats Trivy (image et manifestes) |
+| [DAT](dat-ephora-operator.md) · [ADRs](adrs-ephora-operator.md) | Architecture et décisions |
+| [helm/examples](https://github.com/helm/examples) | Chart `hello-world` utilisé pour les tests sur kind |
+
+### Concepts Kubernetes
+
+| Lien | Utilisé pour |
+|---|---|
+| [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) | Principe de l'opérateur |
+| [Custom Resources](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/) | CRD `PreviewEnvironment` |
+| [Règles de validation CEL](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#validation-rules) | TTL borné, `prNumber` immuable, longueur du nom |
+| [Finalizers](https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/) | Nettoyage garanti avant suppression |
+| [Network Policies](https://kubernetes.io/docs/concepts/services-networking/network-policies/) | Isolation réseau des namespaces |
+| [Resource Quotas](https://kubernetes.io/docs/concepts/policy/resource-quotas/) · [Limit Ranges](https://kubernetes.io/docs/concepts/policy/limit-range/) | Garde-fous de consommation |
+
+### Frameworks et bibliothèques
+
+| Lien | Utilisé pour |
+|---|---|
+| [Operator SDK](https://sdk.operatorframework.io/) | Scaffolding du projet |
+| [The Kubebuilder Book](https://book.kubebuilder.io/) | Référence sur l'écriture de contrôleurs et les marqueurs `+kubebuilder` |
+| [controller-runtime](https://pkg.go.dev/sigs.k8s.io/controller-runtime) | Manager, reconciler, prédicats |
+| [envtest](https://book.kubebuilder.io/reference/envtest.html) | Tests d'intégration avec un API server local |
+| [Helm SDK (`action`)](https://pkg.go.dev/helm.sh/helm/v3/pkg/action) | Install / upgrade / uninstall des releases |
+
+### Outils
+
+| Lien | Utilisé pour |
+|---|---|
+| [kind](https://kind.sigs.k8s.io/) | Cluster Kubernetes local |
+| [golangci-lint](https://golangci-lint.run/) | Lint Go |
+| [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) | Vulnérabilités des dépendances Go |
+| [Trivy](https://trivy.dev/) | Scan de l'image et des manifestes |
+| [Dependabot](https://docs.github.com/en/code-security/dependabot) | Mises à jour automatiques des dépendances |
 
 ## Licence
 
