@@ -48,6 +48,7 @@ func main() {
 	var deployerClusterRole string
 	var viewerClusterRole string
 	var viewerGroups string
+	var gitCredentialsDir string
 	var secureMetrics bool
 	var metricsRequireRBAC bool
 
@@ -73,6 +74,9 @@ func main() {
 	flag.StringVar(&viewerGroups, "viewer-groups", "",
 		"Comma-separated groups (e.g. developers) granted read access + port-forward in every "+
 			"preview namespace. Empty: no such access is granted.")
+	flag.StringVar(&gitCredentialsDir, "git-credentials-dir", controller.DefaultGitCredentialsDir,
+		"Directory holding the optional HTTPS git credentials used to clone chart repositories "+
+			"(files `password` = token, `username` = optional). Missing files: anonymous clone.")
 
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
@@ -114,6 +118,7 @@ func main() {
 		DeployerClusterRole: deployerClusterRole,
 		ViewerClusterRole:   viewerClusterRole,
 		ViewerGroups:        splitNonEmpty(viewerGroups),
+		GitCredentialsDir:   gitCredentialsDir,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PreviewEnvironment")
 		os.Exit(1)

@@ -75,6 +75,10 @@ type PreviewEnvironmentReconciler struct {
 	// ViewerClusterRole overrides DefaultViewerClusterRole when set.
 	ViewerClusterRole string
 
+	// GitCredentialsDir overrides DefaultGitCredentialsDir when set (see
+	// gitauth.go).
+	GitCredentialsDir string
+
 	// WorkDir overrides the base directory used for chart checkouts
 	// (defaults to os.TempDir()); mainly useful for tests.
 	WorkDir string

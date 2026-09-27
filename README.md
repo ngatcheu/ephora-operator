@@ -276,6 +276,7 @@ Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `pe
 | **Source des charts** | Liste blanche d'hôtes Git dans le schéma de la CRD |
 | **Injection d'arguments git** | Révision commençant par `-` refusée (CRD + code), `git checkout <rev> --` |
 | **Traversée de chemin** | `chartPath` sortant du dépôt cloné (`../..`) refusé |
+| **Accès aux dépôts privés** | Jeton HTTPS en lecture seule, monté depuis un Secret (aucun droit RBAC sur les Secrets). Transmis à git en en-tête `Authorization` via l'environnement, **limité à l'hôte du dépôt**, redirections désactivées : il n'apparaît ni dans la ligne de commande, ni dans l'URL, ni dans le dépôt cloné, ni dans les messages d'erreur |
 | **Liens symboliques** | Clone avec `core.symlinks=false` : un lien dans le chart ne peut pas exposer un fichier de l'opérateur (ex. son jeton de ServiceAccount) |
 | **Isolation des environnements** | Un namespace n'est utilisé et supprimé que par le `PreviewEnvironment` qui l'a créé (deux objets avec le même `prNumber`/`appName` ne le partagent pas) |
 | **Coût** | TTL borné à 168h au niveau du schéma |
@@ -288,7 +289,7 @@ Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `pe
 **Limites connues** (à traiter avant la production) :
 
 - La `NetworkPolicy` accepte l'entrée depuis **tous** les namespaces → à limiter à la passerelle interne (VPN, ingress interne).
-- Pas encore d'authentification Git : seuls les dépôts accessibles sans identifiants sont clonables.
+- Un seul identifiant Git pour tout l'opérateur : il doit pouvoir lire les dépôts de toutes les équipes intégrées.
 
 Détails : [DAT §5](dat-ephora-operator.md) et [ADRs](adrs-ephora-operator.md).
 
@@ -313,6 +314,7 @@ Les erreurs sont aussi remontées en **événements Kubernetes** (`kubectl descr
 | `--metrics-require-rbac` | `false` | Métriques réservées aux clients autorisés à `GET /metrics` (activé par `make deploy`, nécessite `--metrics-secure`) |
 | `--viewer-groups` | *(vide)* | Groupes (ex. les développeurs) ayant accès en lecture + `port-forward` dans chaque namespace de preview |
 | `--viewer-cluster-role` | `ephora-operator-preview-viewer` | ClusterRole lié à ces groupes, namespace par namespace |
+| `--git-credentials-dir` | `/var/run/ephora/git` | Dossier du jeton Git optionnel (fichiers `password` et `username`) ; absent : clone anonyme |
 | `--health-probe-bind-address` | `:8081` | Sondes `/healthz` et `/readyz` |
 | `--leader-elect` | `false` | Élection de leader (obligatoire au-delà d'un réplica) |
 | `--orphan-sweep-interval` | `30m` | Fréquence du balayage des namespaces orphelins |
@@ -348,7 +350,7 @@ make undeploy
 | [kubectl](https://kubernetes.io/docs/tasks/tools/) | compatible avec le cluster | |
 | [Helm](https://helm.sh/docs/intro/install/) | v3 | Inspection des releases |
 | [golangci-lint](https://golangci-lint.run/) | v2 | Lint |
-| git | ≥ 2.24 | Clone des charts (aussi requis à l'exécution) |
+| git | ≥ 2.31 | Clone des charts (aussi requis à l'exécution) |
 
 `controller-gen`, `setup-envtest` et `kustomize` sont téléchargés automatiquement dans `./bin` par le Makefile.
 
@@ -439,7 +441,7 @@ hack/                    Scripts d'installation des outils
 - [x] Tests unitaires + envtest, CI DevSecOps
 - [x] Helm exécuté avec une identité limitée au namespace
 - [ ] Restreindre l'entrée de la NetworkPolicy à la passerelle interne
-- [ ] Authentification Git pour les dépôts privés
+- [x] Authentification Git pour les dépôts privés (jeton HTTPS)
 - [x] Test de bout en bout de l'opérateur déployé dans le cluster (kind)
 - [x] Métriques HTTPS authentifiées, accès lecture des développeurs
 

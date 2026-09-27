@@ -28,6 +28,11 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        # Group-owns mounted Secret files (git credentials) so the non-root
+        # user (65532, see Dockerfile) can read them with mode 0440.
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
       containers:
@@ -66,7 +71,17 @@ spec:
         # Chart-checkout scratch space (helmchart.go clones into os.TempDir()).
         - name: tmp
           mountPath: /tmp
+        # Optional HTTPS token for private chart repositories (gitauth.go).
+        - name: git-credentials
+          mountPath: /var/run/ephora/git
+          readOnly: true
       volumes:
       - name: tmp
         emptyDir:
           sizeLimit: 1Gi
+      - name: git-credentials
+        secret:
+          # Full name: not managed by kustomize, so not prefixed automatically.
+          secretName: ephora-operator-git-credentials
+          optional: true # anonymous clones until the Secret is created
+          defaultMode: 0440

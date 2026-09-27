@@ -119,7 +119,7 @@ TOKEN=$(kubectl -n ephora-previews create token ci-$TEAM --duration=720h)
 
 Construire un kubeconfig avec ce jeton, l'URL de l'API et le CA du cluster, puis le transmettre à l'équipe pour le secret GitHub `PREVIEW_KUBECONFIG`.
 
-Pour que les **développeurs** de l'équipe puissent consulter leurs environnements (pods, logs, `port-forward`), ajouter leur groupe à `--viewer-groups` (voir [§7.5](#75-changer-les-paramètres-de-lopérateur)) : l'opérateur crée alors un RoleBinding en lecture dans **chaque** namespace de preview. Ce rôle exclut les Secrets et `pods/exec`. Pour lister les `PreviewEnvironment`, lier aussi le groupe au rôle `ephora-operator-previewenvironment-viewer-role` dans le namespace de gestion :
+Pour que les **développeurs** de l'équipe puissent consulter leurs environnements (pods, logs, `port-forward`), ajouter leur groupe à `--viewer-groups` (voir [§7.6](#76-changer-les-paramètres-de-lopérateur)) : l'opérateur crée alors un RoleBinding en lecture dans **chaque** namespace de preview. Ce rôle exclut les Secrets et `pods/exec`. Pour lister les `PreviewEnvironment`, lier aussi le groupe au rôle `ephora-operator-previewenvironment-viewer-role` dans le namespace de gestion :
 
 ```bash
 kubectl -n ephora-previews create rolebinding devs-$TEAM \
@@ -242,7 +242,7 @@ Chaque erreur de réconciliation apparaît une fois dans les logs (`Reconciler e
 | Raison | Cause | Action |
 |---|---|---|
 | `DeployerIdentityReconcileFailed` | ClusterRole `ephora-operator-preview-deployer` absent, ou l'opérateur n'a pas le droit `bind` dessus | `kubectl get clusterrole ephora-operator-preview-deployer` ; redéployer (`make deploy`). Si le rôle a été renommé, aligner `--deployer-cluster-role` et le marqueur `bind` |
-| `HelmDeployFailed` + `forbidden … ephora-deployer` | Le chart utilise un type de ressource absent du rôle de déploiement | Voir [§7.4](#74-autoriser-un-nouveau-type-de-ressource) |
+| `HelmDeployFailed` + `forbidden … ephora-deployer` | Le chart utilise un type de ressource absent du rôle de déploiement | Voir [§7.5](#75-autoriser-un-nouveau-type-de-ressource) |
 | `NamespaceReconcileFailed` + `not managed by ephora-operator` | Un namespace `preview-pr-…` existe déjà, créé hors opérateur | Vérifier qu'il est inutilisé, puis le supprimer |
 | `NamespaceReconcileFailed` + `already belongs to` | Deux `PreviewEnvironment` pour la même PR et la même app | Supprimer le doublon |
 
@@ -348,7 +348,33 @@ kubectl -n ephora-previews create token ci-<team> --duration=720h
 
 Mettre à jour le secret `PREVIEW_KUBECONFIG` du dépôt de l'équipe. Planifier ce renouvellement avant l'expiration (30 jours dans l'exemple).
 
-### 7.3 Modifier la liste blanche des dépôts
+### 7.3 Configurer l'accès aux dépôts privés
+
+L'opérateur clone les charts avec **un jeton HTTPS en lecture seule**, commun à toutes les équipes.
+
+**Choisir le jeton** : un compte technique (*machine user*) avec un jeton *fine-grained* limité à **Contents : Read-only**, sur les seuls dépôts intégrés. Jamais un jeton personnel, jamais de droit en écriture.
+
+```bash
+kubectl -n ephora-operator-system create secret generic ephora-operator-git-credentials \
+  --from-literal=username=<compte-technique> \
+  --from-literal=password=<jeton>
+```
+
+- Le Secret est **monté en fichiers** dans le pod (`/var/run/ephora/git`) : l'opérateur n'a aucun droit RBAC de lecture sur les Secrets.
+- Le jeton est transmis à git en en-tête HTTP, **uniquement vers l'hôte du dépôt**, sans redirection : il n'apparaît ni dans les logs, ni dans le `status` des `PreviewEnvironment`.
+- `username` est facultatif (`x-access-token` par défaut, accepté par GitHub).
+
+**Vérifier** : créer un environnement pointant vers un dépôt privé ; les erreurs `could not read Username` ou `Authentication failed` disparaissent.
+
+**Rotation** : mettre à jour le Secret (`kubectl create secret … --dry-run=client -o yaml | kubectl apply -f -`). Le fichier est relu à chaque clone, et kubelet le met à jour dans le pod en une minute environ, sans redémarrage. Si le Secret vient d'être **créé** (il n'existait pas au démarrage du pod), redémarrer l'opérateur par sécurité :
+
+```bash
+kubectl -n ephora-operator-system rollout restart deploy/ephora-operator-controller-manager
+```
+
+**Révocation d'urgence** : révoquer le jeton côté GitHub, puis supprimer le Secret.
+
+### 7.4 Modifier la liste blanche des dépôts
 
 1. Modifier le motif `+kubebuilder:validation:Pattern` de `Repo` dans `api/v1alpha1/previewenvironment_types.go`.
 2. `make manifests`, relire la CRD générée, commiter.
@@ -356,7 +382,7 @@ Mettre à jour le secret `PREVIEW_KUBECONFIG` du dépôt de l'équipe. Planifier
 
 Les objets existants ne sont pas revalidés, mais toute modification ultérieure de leur `spec` le sera.
 
-### 7.4 Autoriser un nouveau type de ressource
+### 7.5 Autoriser un nouveau type de ressource
 
 Quand un chart légitime a besoin d'un type absent du rôle de déploiement :
 
@@ -364,7 +390,7 @@ Quand un chart légitime a besoin d'un type absent du rôle de déploiement :
 2. Ajouter la règle dans `config/deployer/role.yaml`, faire relire la modification.
 3. `make deploy IMG=…`. Le changement s'applique immédiatement à tous les namespaces : ils sont liés au même ClusterRole.
 
-### 7.5 Changer les paramètres de l'opérateur
+### 7.6 Changer les paramètres de l'opérateur
 
 Modifier les `args` dans `config/manager/manager.yaml`, puis `make deploy`.
 
@@ -388,7 +414,8 @@ Un changement de `--viewer-groups` s'applique à chaque namespace au plus tard 1
 |---|---|---|
 | Le `ServiceMonitor` n'est pas activé par défaut (il exige le Prometheus Operator) | Collecte à déclarer | Voir [§4](#brancher-prometheus) |
 | Certificat des métriques auto-signé | `insecureSkipVerify` côté Prometheus | cert-manager (à venir) |
-| Pas d'authentification Git | Seuls les dépôts clonables sans identifiants fonctionnent | À venir |
+| Un seul identifiant Git pour tout l'opérateur | Le compte technique doit pouvoir lire tous les dépôts intégrés | Identifiants par équipe (à venir) |
+| Pas de rafraîchissement automatique de jeton | Un jeton d'installation GitHub App (1h) expire | Utiliser un jeton de compte technique, ou un outil externe qui met à jour le Secret |
 | Entrée de la NetworkPolicy ouverte à tous les namespaces | Un pod de n'importe quel namespace peut joindre un environnement | Restreindre à la passerelle interne (à venir) |
 | Quotas fixés dans le code | Pas d'ajustement par équipe | Nouvelle version de l'opérateur |
 | Pas de métrique par phase | Les `Failed` ne sont pas visibles dans Prometheus | `kubectl get penv -A` |

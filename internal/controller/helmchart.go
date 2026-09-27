@@ -59,6 +59,11 @@ func (r *PreviewEnvironmentReconciler) resolveChart(ctx context.Context, source 
 		return nil, nil, fmt.Errorf("invalid spec.source.revision %q: must not start with '-'", source.Revision)
 	}
 
+	gitEnv, err := r.gitEnv(source.Repo)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	workDir, err := os.MkdirTemp(r.workDir(), "ephora-chart-")
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating chart scratch dir: %w", err)
@@ -77,12 +82,13 @@ func (r *PreviewEnvironmentReconciler) resolveChart(ctx context.Context, source 
 	// the link target. The chart comes from the PR author and Helm's loader
 	// follows symlinks, so a link to e.g. the operator's ServiceAccount token
 	// would otherwise be readable through .Files.Get.
-	if err := runGit(cloneCtx, "", "clone", "--quiet", "--config", "core.symlinks=false", "--", source.Repo, workDir); err != nil {
+	if err := runGit(cloneCtx, "", gitEnv, "clone", "--quiet", "--config", "core.symlinks=false", "--", source.Repo, workDir); err != nil {
 		cleanup()
 		return nil, nil, fmt.Errorf("cloning %s: %w", source.Repo, err)
 	}
 	// Trailing "--": the argument before it is always a revision, never a path.
-	if err := runGit(cloneCtx, workDir, "checkout", "--quiet", source.Revision, "--"); err != nil {
+	// Local operation: no credentials needed.
+	if err := runGit(cloneCtx, workDir, nil, "checkout", "--quiet", source.Revision, "--"); err != nil {
 		cleanup()
 		return nil, nil, fmt.Errorf("checking out revision %s: %w", source.Revision, err)
 	}
@@ -109,9 +115,11 @@ func (r *PreviewEnvironmentReconciler) workDir() string {
 	return os.TempDir()
 }
 
-func runGit(ctx context.Context, dir string, args ...string) error {
+// runGit runs git in dir. A nil env inherits the operator's environment.
+func runGit(ctx context.Context, dir string, env []string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		// Only the subcommand, not the full args: they include the random

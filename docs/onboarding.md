@@ -45,7 +45,7 @@ L'opérateur déploie **votre propre chart Helm**, depuis votre dépôt, à la r
 
 Ouvrez une demande auprès de l'équipe plateforme en précisant :
 
-- le **nom de votre dépôt** (il doit être sur le GitHub interne autorisé) ;
+- le **nom de votre dépôt** (il doit être sur le GitHub interne autorisé). S'il est **privé**, l'équipe plateforme donne au compte technique de l'opérateur un accès **en lecture seule** à ce dépôt ;
 - le **nom de votre application** (`appName`) : minuscules, chiffres et tirets, 40 caractères maximum.
 
 Vous recevrez :
@@ -191,6 +191,7 @@ La section `Conditions` (champ `Reason` et `Message`) et les `Events` indiquent 
 | Symptôme / raison | Cause probable | Solution |
 |---|---|---|
 | `HelmDeployFailed` + `cloning …` | Dépôt inaccessible ou URL fausse | Vérifier `spec.source.repo` |
+| `HelmDeployFailed` + `could not read Username` ou `Authentication failed` | Dépôt privé auquel l'opérateur n'a pas accès | Demander à l'équipe plateforme d'ajouter votre dépôt au compte technique (lecture seule) |
 | `HelmDeployFailed` + `checking out revision` | Révision inexistante | Vérifier que le commit est poussé |
 | `HelmDeployFailed` + `loading chart` | Mauvais `chartPath` ou chart invalide | `helm lint charts/app` en local |
 | `HelmDeployFailed` + `forbidden` | Le chart crée une ressource interdite (Ingress, RBAC, ressource cluster, autre namespace) | Retirer ou désactiver cette ressource pour la preview |
