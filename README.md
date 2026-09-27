@@ -4,6 +4,7 @@
 [![Kubernetes](https://img.shields.io/badge/kubernetes-1.28%2B-326ce5.svg)](https://kubernetes.io)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](https://go.dev)
 [![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](#feuille-de-route)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 
 **ephora-operator** est un opérateur Kubernetes qui gère tout le cycle de vie des **environnements de preview éphémères** : pour chaque Pull Request, il crée un namespace isolé, y déploie le chart Helm de l'application, suit son état, puis supprime tout automatiquement à l'expiration du TTL ou à la fermeture de la PR.
 
@@ -489,4 +490,6 @@ hack/                    Scripts d'installation des outils
 
 ## Licence
 
-Apache 2.0
+© 2026 ngatcheu — distribué sous licence **GNU Affero General Public License v3.0 ou ultérieure** (`AGPL-3.0-or-later`). Texte complet : [LICENSE](LICENSE).
+
+En résumé : vous pouvez utiliser, modifier et redistribuer ce logiciel, y compris commercialement, à condition que toute version modifiée — **y compris lorsqu'elle est utilisée pour fournir un service accessible par le réseau** — soit publiée sous la même licence, avec son code source.
