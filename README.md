@@ -25,6 +25,7 @@
 - [Déploiement dans un cluster](#déploiement-dans-un-cluster)
 - [Développement](#développement)
 - [Feuille de route](#feuille-de-route)
+- [Liens utiles](#liens-utiles)
 
 ---
 
@@ -436,6 +437,50 @@ hack/                    Scripts d'installation des outils
 - [ ] Ingress dynamique + cert-manager (ADR-03)
 - [ ] Commentaire automatique sur la PR avec l'état de l'environnement
 - [ ] Tableau de bord FinOps
+
+## Liens utiles
+
+### Projet
+
+| Lien | Contenu |
+|---|---|
+| [Actions](https://github.com/ngatcheu/ephora-operator/actions) | Exécutions de la CI |
+| [Pull Requests](https://github.com/ngatcheu/ephora-operator/pulls) | Changements en cours de revue |
+| [Issues](https://github.com/ngatcheu/ephora-operator/issues) | Bugs et demandes d'évolution |
+| [Code scanning](https://github.com/ngatcheu/ephora-operator/security/code-scanning) | Résultats Trivy (image et manifestes) |
+| [DAT](dat-ephora-operator.md) · [ADRs](adrs-ephora-operator.md) | Architecture et décisions |
+| [helm/examples](https://github.com/helm/examples) | Chart `hello-world` utilisé pour les tests sur kind |
+
+### Concepts Kubernetes
+
+| Lien | Utilisé pour |
+|---|---|
+| [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) | Principe de l'opérateur |
+| [Custom Resources](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/) | CRD `PreviewEnvironment` |
+| [Règles de validation CEL](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#validation-rules) | TTL borné, `prNumber` immuable, longueur du nom |
+| [Finalizers](https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/) | Nettoyage garanti avant suppression |
+| [Network Policies](https://kubernetes.io/docs/concepts/services-networking/network-policies/) | Isolation réseau des namespaces |
+| [Resource Quotas](https://kubernetes.io/docs/concepts/policy/resource-quotas/) · [Limit Ranges](https://kubernetes.io/docs/concepts/policy/limit-range/) | Garde-fous de consommation |
+
+### Frameworks et bibliothèques
+
+| Lien | Utilisé pour |
+|---|---|
+| [Operator SDK](https://sdk.operatorframework.io/) | Scaffolding du projet |
+| [The Kubebuilder Book](https://book.kubebuilder.io/) | Référence sur l'écriture de contrôleurs et les marqueurs `+kubebuilder` |
+| [controller-runtime](https://pkg.go.dev/sigs.k8s.io/controller-runtime) | Manager, reconciler, prédicats |
+| [envtest](https://book.kubebuilder.io/reference/envtest.html) | Tests d'intégration avec un API server local |
+| [Helm SDK (`action`)](https://pkg.go.dev/helm.sh/helm/v3/pkg/action) | Install / upgrade / uninstall des releases |
+
+### Outils
+
+| Lien | Utilisé pour |
+|---|---|
+| [kind](https://kind.sigs.k8s.io/) | Cluster Kubernetes local |
+| [golangci-lint](https://golangci-lint.run/) | Lint Go |
+| [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) | Vulnérabilités des dépendances Go |
+| [Trivy](https://trivy.dev/) | Scan de l'image et des manifestes |
+| [Dependabot](https://docs.github.com/en/code-security/dependabot) | Mises à jour automatiques des dépendances |
 
 ## Licence
 
