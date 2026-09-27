@@ -271,7 +271,7 @@ Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `pe
 
 | Mesure | Détail |
 |---|---|
-| **Isolation réseau** | `NetworkPolicy` `ephora-default` dans chaque namespace : entrée depuis le namespace et le cluster, sortie limitée au DNS et au cluster — pas d'Internet |
+| **Isolation réseau** | `NetworkPolicy` `ephora-default` dans chaque namespace : entrée depuis le namespace lui-même et depuis les seuls namespaces de `--preview-ingress-namespaces` (passerelle VPN, ingress interne ; tout le cluster si non configuré), sortie limitée au DNS et au cluster — pas d'Internet |
 | **Quotas** | `ResourceQuota` (2 CPU / 4 Gi demandés, 4 CPU / 8 Gi max, 20 pods) + `LimitRange` (valeurs par défaut par conteneur) |
 | **Source des charts** | Liste blanche d'hôtes Git dans le schéma de la CRD |
 | **Injection d'arguments git** | Révision commençant par `-` refusée (CRD + code), `git checkout <rev> --` |
@@ -288,7 +288,7 @@ Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `pe
 
 **Limites connues** (à traiter avant la production) :
 
-- La `NetworkPolicy` accepte l'entrée depuis **tous** les namespaces → à limiter à la passerelle interne (VPN, ingress interne).
+- Sans `--preview-ingress-namespaces`, la `NetworkPolicy` accepte l'entrée depuis **tous** les namespaces : à configurer en production.
 - Un seul identifiant Git pour tout l'opérateur : il doit pouvoir lire les dépôts de toutes les équipes intégrées.
 
 Détails : [DAT §5](dat-ephora-operator.md) et [ADRs](adrs-ephora-operator.md).
@@ -314,6 +314,7 @@ Les erreurs sont aussi remontées en **événements Kubernetes** (`kubectl descr
 | `--metrics-require-rbac` | `false` | Métriques réservées aux clients autorisés à `GET /metrics` (activé par `make deploy`, nécessite `--metrics-secure`) |
 | `--viewer-groups` | *(vide)* | Groupes (ex. les développeurs) ayant accès en lecture + `port-forward` dans chaque namespace de preview |
 | `--viewer-cluster-role` | `ephora-operator-preview-viewer` | ClusterRole lié à ces groupes, namespace par namespace |
+| `--preview-ingress-namespaces` | *(vide : tous)* | Namespaces autorisés à joindre les environnements (passerelle VPN, ingress interne), en plus du trafic interne au namespace |
 | `--git-credentials-dir` | `/var/run/ephora/git` | Dossier du jeton Git optionnel (fichiers `password` et `username`) ; absent : clone anonyme |
 | `--health-probe-bind-address` | `:8081` | Sondes `/healthz` et `/readyz` |
 | `--leader-elect` | `false` | Élection de leader (obligatoire au-delà d'un réplica) |
@@ -440,7 +441,7 @@ hack/                    Scripts d'installation des outils
 - [x] Garde-fous par namespace (NetworkPolicy, quotas)
 - [x] Tests unitaires + envtest, CI DevSecOps
 - [x] Helm exécuté avec une identité limitée au namespace
-- [ ] Restreindre l'entrée de la NetworkPolicy à la passerelle interne
+- [x] Entrée réseau restreinte à la passerelle interne (`--preview-ingress-namespaces`)
 - [x] Authentification Git pour les dépôts privés (jeton HTTPS)
 - [x] Test de bout en bout de l'opérateur déployé dans le cluster (kind)
 - [x] Métriques HTTPS authentifiées, accès lecture des développeurs

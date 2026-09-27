@@ -49,6 +49,7 @@ func main() {
 	var viewerClusterRole string
 	var viewerGroups string
 	var gitCredentialsDir string
+	var previewIngressNamespaces string
 	var secureMetrics bool
 	var metricsRequireRBAC bool
 
@@ -77,6 +78,9 @@ func main() {
 	flag.StringVar(&gitCredentialsDir, "git-credentials-dir", controller.DefaultGitCredentialsDir,
 		"Directory holding the optional HTTPS git credentials used to clone chart repositories "+
 			"(files `password` = token, `username` = optional). Missing files: anonymous clone.")
+	flag.StringVar(&previewIngressNamespaces, "preview-ingress-namespaces", "",
+		"Comma-separated namespaces allowed to reach preview environments (e.g. the VPN gateway or "+
+			"internal ingress controller namespace). Empty: any in-cluster namespace.")
 
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
@@ -110,15 +114,16 @@ func main() {
 	}
 
 	if err = (&controller.PreviewEnvironmentReconciler{
-		Client:              mgr.GetClient(),
-		Scheme:              mgr.GetScheme(),
-		RESTConfig:          mgr.GetConfig(),
-		Recorder:            mgr.GetEventRecorder("ephora-operator"),
-		CleanupTimeout:      cleanupTimeout,
-		DeployerClusterRole: deployerClusterRole,
-		ViewerClusterRole:   viewerClusterRole,
-		ViewerGroups:        splitNonEmpty(viewerGroups),
-		GitCredentialsDir:   gitCredentialsDir,
+		Client:                   mgr.GetClient(),
+		Scheme:                   mgr.GetScheme(),
+		RESTConfig:               mgr.GetConfig(),
+		Recorder:                 mgr.GetEventRecorder("ephora-operator"),
+		CleanupTimeout:           cleanupTimeout,
+		DeployerClusterRole:      deployerClusterRole,
+		ViewerClusterRole:        viewerClusterRole,
+		ViewerGroups:             splitNonEmpty(viewerGroups),
+		GitCredentialsDir:        gitCredentialsDir,
+		PreviewIngressNamespaces: splitNonEmpty(previewIngressNamespaces),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PreviewEnvironment")
 		os.Exit(1)

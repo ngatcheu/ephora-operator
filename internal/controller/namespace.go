@@ -146,12 +146,12 @@ func (r *PreviewEnvironmentReconciler) reconcileNetworkPolicy(ctx context.Contex
 					},
 				},
 				{
-					// Internal cluster access for review (ADR-03): any
-					// in-cluster namespace may reach this environment.
-					// Scope this down to your real internal gateway/VPN
-					// namespace before relying on it for isolation.
+					// Internal access for review (ADR-03), from the
+					// namespaces in --preview-ingress-namespaces (e.g. the
+					// VPN gateway or internal ingress controller) — or from
+					// any in-cluster namespace when that list is empty.
 					From: []networkingv1.NetworkPolicyPeer{
-						{NamespaceSelector: &metav1.LabelSelector{}},
+						{NamespaceSelector: r.ingressNamespaceSelector()},
 					},
 				},
 			},
@@ -178,6 +178,23 @@ func (r *PreviewEnvironmentReconciler) reconcileNetworkPolicy(ctx context.Contex
 	}
 
 	return r.upsertNetworkPolicy(ctx, desired)
+}
+
+// ingressNamespaceSelector selects the namespaces allowed to reach preview
+// environments: those listed in PreviewIngressNamespaces (matched on the
+// kubernetes.io/metadata.name label Kubernetes sets on every namespace), or
+// all namespaces when none is configured.
+func (r *PreviewEnvironmentReconciler) ingressNamespaceSelector() *metav1.LabelSelector {
+	if len(r.PreviewIngressNamespaces) == 0 {
+		return &metav1.LabelSelector{}
+	}
+	return &metav1.LabelSelector{
+		MatchExpressions: []metav1.LabelSelectorRequirement{{
+			Key:      corev1.LabelMetadataName,
+			Operator: metav1.LabelSelectorOpIn,
+			Values:   r.PreviewIngressNamespaces,
+		}},
+	}
 }
 
 func (r *PreviewEnvironmentReconciler) upsertNetworkPolicy(ctx context.Context, desired *networkingv1.NetworkPolicy) error {

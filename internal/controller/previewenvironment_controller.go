@@ -79,6 +79,10 @@ type PreviewEnvironmentReconciler struct {
 	// gitauth.go).
 	GitCredentialsDir string
 
+	// PreviewIngressNamespaces restricts which namespaces may reach preview
+	// environments (besides same-namespace traffic). Empty: any namespace.
+	PreviewIngressNamespaces []string
+
 	// WorkDir overrides the base directory used for chart checkouts
 	// (defaults to os.TempDir()); mainly useful for tests.
 	WorkDir string

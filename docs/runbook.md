@@ -40,7 +40,7 @@ Pour l'intégration des dépôts applicatifs, voir le [guide d'onboarding](onboa
 
 | Ressource | Nom |
 |---|---|
-| NetworkPolicy (default-deny, sortie limitée au DNS et au cluster) | `ephora-default` |
+| NetworkPolicy (default-deny ; entrée depuis `--preview-ingress-namespaces` ; sortie limitée au DNS et au cluster) | `ephora-default` |
 | ResourceQuota (2 CPU / 4 Gi demandés, 4 CPU / 8 Gi max, 20 pods) | `ephora-default` |
 | LimitRange (valeurs par défaut par conteneur) | `ephora-default` |
 | ServiceAccount utilisé par Helm (sans jeton monté) | `ephora-deployer` |
@@ -401,10 +401,12 @@ Modifier les `args` dans `config/manager/manager.yaml`, puis `make deploy`.
 | `--deployer-cluster-role` | `ephora-operator-preview-deployer` |
 | `--viewer-groups` | *(vide : aucun accès développeur)* — ex. `--viewer-groups=dev-checkout,dev-payment` |
 | `--viewer-cluster-role` | `ephora-operator-preview-viewer` |
+| `--preview-ingress-namespaces` | *(vide : tous les namespaces)* — ex. `--preview-ingress-namespaces=vpn-gateway,ingress-internal`. **À configurer en production.** Le `kubectl port-forward` passe par le kubelet et n'est pas concerné |
+| `--git-credentials-dir` | `/var/run/ephora/git` |
 | `--metrics-secure`, `--metrics-require-rbac` | activés par `make deploy` (ne pas les retirer) |
 | `--leader-elect` | activé dans le déploiement |
 
-Un changement de `--viewer-groups` s'applique à chaque namespace au plus tard 10 min après le redémarrage (réconciliation périodique). Les noms de groupe dépendent de votre fournisseur d'identité (OIDC, LDAP…).
+Un changement de `--viewer-groups` ou de `--preview-ingress-namespaces` s'applique à chaque namespace au plus tard 10 min après le redémarrage (réconciliation périodique). Les noms de groupe dépendent de votre fournisseur d'identité (OIDC, LDAP…).
 
 ---
 
@@ -416,6 +418,6 @@ Un changement de `--viewer-groups` s'applique à chaque namespace au plus tard 1
 | Certificat des métriques auto-signé | `insecureSkipVerify` côté Prometheus | cert-manager (à venir) |
 | Un seul identifiant Git pour tout l'opérateur | Le compte technique doit pouvoir lire tous les dépôts intégrés | Identifiants par équipe (à venir) |
 | Pas de rafraîchissement automatique de jeton | Un jeton d'installation GitHub App (1h) expire | Utiliser un jeton de compte technique, ou un outil externe qui met à jour le Secret |
-| Entrée de la NetworkPolicy ouverte à tous les namespaces | Un pod de n'importe quel namespace peut joindre un environnement | Restreindre à la passerelle interne (à venir) |
+| Sans `--preview-ingress-namespaces`, entrée de la NetworkPolicy ouverte à tous les namespaces | Un pod de n'importe quel namespace peut joindre un environnement | Configurer le flag (voir [§7.6](#76-changer-les-paramètres-de-lopérateur)) |
 | Quotas fixés dans le code | Pas d'ajustement par équipe | Nouvelle version de l'opérateur |
 | Pas de métrique par phase | Les `Failed` ne sont pas visibles dans Prometheus | `kubectl get penv -A` |
