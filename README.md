@@ -330,7 +330,7 @@ Les erreurs sont aussi remontées en **événements Kubernetes** (`kubectl descr
 Chaque tag `vX.Y.Z` publie sur GHCR une image **multi-architecture** (amd64, arm64), **scannée** par Trivy, **signée** avec cosign (sans clé, identité OIDC du workflow), avec son **SBOM** (SPDX) et sa **provenance de build**. Le `install.yaml` de la release référence l'image **par son digest** : ce qui est déployé est exactement ce qui a été scanné et signé.
 
 ```bash
-VERSION=v0.1.0
+VERSION=v0.1.1   # dernière version : https://github.com/ngatcheu/ephora-operator/releases/latest
 
 # 1. Vérifier la signature de l'image avant de l'installer
 IMAGE=$(curl -sL https://github.com/ngatcheu/ephora-operator/releases/download/$VERSION/install.yaml \
