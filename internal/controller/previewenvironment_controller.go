@@ -35,6 +35,10 @@ const DefaultCleanupTimeout = 10 * time.Minute
 // terminating during cleanup.
 const requeueSoon = 10 * time.Second
 
+// resyncPeriod bounds how long a Running environment goes without a
+// reconcile, so guardrails deleted or edited by hand are restored.
+const resyncPeriod = 10 * time.Minute
+
 // PreviewEnvironmentReconciler reconciles a PreviewEnvironment object.
 //
 // Per ADR-01, this stays a Helm-orchestration reconciler, not a general
@@ -60,6 +64,10 @@ type PreviewEnvironmentReconciler struct {
 	// CleanupTimeout overrides DefaultCleanupTimeout when set.
 	CleanupTimeout time.Duration
 
+	// DeployerClusterRole overrides DefaultDeployerClusterRole when set: the
+	// ClusterRole bound, per preview namespace, to the identity Helm runs as.
+	DeployerClusterRole string
+
 	// WorkDir overrides the base directory used for chart checkouts
 	// (defaults to os.TempDir()); mainly useful for tests.
 	WorkDir string
@@ -72,6 +80,16 @@ type PreviewEnvironmentReconciler struct {
 // +kubebuilder:rbac:groups="",resources=resourcequotas;limitranges,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
+//
+// Namespace-scoped deployer identity (see DeployerServiceAccount): the
+// operator itself holds no rights on chart workloads. It only creates the
+// per-namespace ServiceAccount + RoleBinding, and impersonates that account
+// to run Helm. `bind` lets it create RoleBindings to the deployer
+// ClusterRole without holding that role's permissions itself.
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=impersonate,resourceNames=ephora-deployer
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=bind,resourceNames=ephora-operator-preview-deployer
 
 func (r *PreviewEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -144,6 +162,9 @@ func (r *PreviewEnvironmentReconciler) reconcileNormal(ctx context.Context, pe *
 	if err := r.reconcileResourceQuota(ctx, pe, ns); err != nil {
 		return r.failAndRequeue(ctx, pe, "ResourceQuotaReconcileFailed", err)
 	}
+	if err := r.reconcileDeployerIdentity(ctx, pe, ns); err != nil {
+		return r.failAndRequeue(ctx, pe, "DeployerIdentityReconcileFailed", err)
+	}
 
 	if pe.Status.Phase == "" || pe.Status.Phase == ephoraiov1alpha1.PhasePending {
 		if err := r.setPhase(ctx, pe, ephoraiov1alpha1.PhaseProvisioning, metav1.ConditionFalse, "Provisioning", "namespace and guardrails ready, deploying chart"); err != nil {
@@ -177,7 +198,22 @@ func (r *PreviewEnvironmentReconciler) reconcileNormal(ctx context.Context, pe *
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: time.Until(pe.Status.ExpiresAt.Time)}, nil
+	return ctrl.Result{RequeueAfter: nextRequeue(time.Now(), pe.Status.ExpiresAt.Time)}, nil
+}
+
+// nextRequeue schedules the next reconcile of a Running environment: at its
+// expiry, but no later than resyncPeriod so manual drift (e.g. a deleted
+// NetworkPolicy or ResourceQuota) is repaired quickly. Never zero, which
+// controller-runtime would treat as "don't requeue".
+func nextRequeue(now, expiresAt time.Time) time.Duration {
+	d := expiresAt.Sub(now)
+	if d > resyncPeriod {
+		return resyncPeriod
+	}
+	if d <= 0 {
+		return time.Second
+	}
+	return d
 }
 
 func (r *PreviewEnvironmentReconciler) deployChart(ctx context.Context, pe *ephoraiov1alpha1.PreviewEnvironment, namespace, release string) error {
@@ -239,8 +275,13 @@ func (r *PreviewEnvironmentReconciler) reconcileDelete(ctx context.Context, pe *
 	// Best-effort Helm uninstall before deleting the namespace outright —
 	// namespace deletion alone eventually reclaims every resource in it
 	// regardless, but an explicit uninstall gives the chart's pre-delete
-	// hooks (if any) a chance to run first.
-	if pe.Status.HelmReleaseName != "" {
+	// hooks (if any) a chance to run first. Only attempted once the namespace
+	// is still intact: after that, its deployer RoleBinding is being garbage
+	// collected and every retry would just fail with "forbidden".
+	uninstall := func() {
+		if pe.Status.HelmReleaseName == "" {
+			return
+		}
 		cfg, err := r.newActionConfig(ns, func(format string, v ...interface{}) {
 			logger.V(1).Info(fmt.Sprintf(format, v...))
 		})
@@ -251,13 +292,9 @@ func (r *PreviewEnvironmentReconciler) reconcileDelete(ctx context.Context, pe *
 		}
 	}
 
-	if err := r.deleteNamespace(ctx, ns); err != nil {
-		return ctrl.Result{}, fmt.Errorf("deleting namespace %s: %w", ns, err)
-	}
-
-	gone, err := r.namespaceGone(ctx, ns)
+	gone, err := r.deleteOwnedNamespace(ctx, pe, ns, uninstall)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("checking namespace %s: %w", ns, err)
+		return ctrl.Result{}, err
 	}
 
 	timedOut := time.Since(pe.Status.CleanupStartedAt.Time) > r.effectiveCleanupTimeout()

@@ -27,6 +27,23 @@ rules:
   - list
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resourceNames:
+  - ephora-deployer
+  resources:
+  - serviceaccounts
+  verbs:
+  - impersonate
+- apiGroups:
   - ephora.io
   resources:
   - previewenvironments
@@ -65,6 +82,26 @@ rules:
   - networkpolicies
   verbs:
   - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resourceNames:
+  - ephora-operator-preview-deployer
+  resources:
+  - clusterroles
+  verbs:
+  - bind
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  verbs:
+  - create
+  - delete
   - get
   - list
   - patch

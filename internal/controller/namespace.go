@@ -6,6 +6,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	resource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +32,21 @@ const (
 	networkPolicyName = "ephora-default"
 	resourceQuotaName = "ephora-default"
 	limitRangeName    = "ephora-default"
+
+	// DeployerServiceAccount is the identity Helm runs as (impersonation) in
+	// each preview namespace. The chart comes from the PR author, so it must
+	// never run with the operator's own cluster-wide rights: this account can
+	// only act inside its namespace (RoleBinding below), which blocks a chart
+	// from deploying elsewhere (metadata.namespace) or reading other
+	// namespaces' Secrets (Helm `lookup`).
+	DeployerServiceAccount  = "ephora-deployer"
+	deployerRoleBindingName = "ephora-deployer"
+
+	// DefaultDeployerClusterRole is the ClusterRole (config/deployer, name
+	// prefixed by kustomize) bound to DeployerServiceAccount in each preview
+	// namespace. Keep in sync with the `bind` RBAC marker in
+	// previewenvironment_controller.go.
+	DefaultDeployerClusterRole = "ephora-operator-preview-deployer"
 )
 
 // namespaceName derives the dedicated namespace for a PreviewEnvironment per
@@ -71,7 +87,21 @@ func (r *PreviewEnvironmentReconciler) reconcileNamespace(ctx context.Context, p
 	if ns.Labels[LabelManagedBy] != ManagedByValue {
 		return fmt.Errorf("namespace %s already exists and is not managed by ephora-operator", name)
 	}
+	// Two PreviewEnvironments with the same prNumber/appName derive the same
+	// namespace: only the first one owns it, the other must fail rather than
+	// share (and later tear down) an environment that isn't its own.
+	if !ownsNamespace(pe, ns) {
+		return fmt.Errorf("namespace %s already belongs to PreviewEnvironment %s/%s",
+			name, ns.Labels[LabelOwnerNamespace], ns.Labels[LabelOwner])
+	}
 	return nil
+}
+
+// ownsNamespace reports whether ns was created for pe (owner labels match).
+func ownsNamespace(pe *ephoraiov1alpha1.PreviewEnvironment, ns *corev1.Namespace) bool {
+	return ns.Labels[LabelManagedBy] == ManagedByValue &&
+		ns.Labels[LabelOwner] == pe.Name &&
+		ns.Labels[LabelOwnerNamespace] == pe.Namespace
 }
 
 // reconcileNetworkPolicy ensures a default-deny NetworkPolicy exists in the
@@ -243,29 +273,98 @@ func (r *PreviewEnvironmentReconciler) upsertLimitRange(ctx context.Context, des
 	return r.Update(ctx, existing)
 }
 
-// deleteNamespace issues a delete for the environment's namespace. Deletion
-// is asynchronous (Kubernetes garbage-collects the namespace's contents) —
-// callers should not assume the namespace is gone the moment this returns;
-// see reconcileDelete's use of the CleanupTimeout mitigation from DAT §7.
-func (r *PreviewEnvironmentReconciler) deleteNamespace(ctx context.Context, name string) error {
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
-	err := r.Delete(ctx, ns)
-	if apierrors.IsNotFound(err) {
-		return nil
+// reconcileDeployerIdentity ensures the namespace-scoped identity Helm
+// impersonates: a ServiceAccount plus a RoleBinding granting it the deployer
+// ClusterRole in this namespace only. Idempotent.
+func (r *PreviewEnvironmentReconciler) reconcileDeployerIdentity(ctx context.Context, pe *ephoraiov1alpha1.PreviewEnvironment, namespace string) error {
+	noToken := false
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      DeployerServiceAccount,
+			Namespace: namespace,
+			Labels:    ownerLabels(pe),
+		},
+		// Only ever impersonated by the operator, never mounted into pods.
+		AutomountServiceAccountToken: &noToken,
 	}
-	return err
+	if err := r.Create(ctx, sa); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("creating service account %s/%s: %w", namespace, DeployerServiceAccount, err)
+	}
+
+	desired := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      deployerRoleBindingName,
+			Namespace: namespace,
+			Labels:    ownerLabels(pe),
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "ClusterRole",
+			Name:     r.deployerClusterRole(),
+		},
+		Subjects: []rbacv1.Subject{{
+			Kind:      rbacv1.ServiceAccountKind,
+			Name:      DeployerServiceAccount,
+			Namespace: namespace,
+		}},
+	}
+
+	existing := &rbacv1.RoleBinding{}
+	err := r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: namespace}, existing)
+	switch {
+	case apierrors.IsNotFound(err):
+		return r.Create(ctx, desired)
+	case err != nil:
+		return fmt.Errorf("getting role binding %s/%s: %w", namespace, desired.Name, err)
+	case existing.RoleRef != desired.RoleRef:
+		// roleRef is immutable: recreate.
+		if err := r.Delete(ctx, existing); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deleting stale role binding %s/%s: %w", namespace, desired.Name, err)
+		}
+		return r.Create(ctx, desired)
+	default:
+		existing.Subjects = desired.Subjects
+		existing.Labels = desired.Labels
+		return r.Update(ctx, existing)
+	}
 }
 
-// namespaceGone reports whether the namespace no longer exists (fully
-// terminated and garbage-collected).
-func (r *PreviewEnvironmentReconciler) namespaceGone(ctx context.Context, name string) (bool, error) {
+func (r *PreviewEnvironmentReconciler) deployerClusterRole() string {
+	if r.DeployerClusterRole != "" {
+		return r.DeployerClusterRole
+	}
+	return DefaultDeployerClusterRole
+}
+
+// deleteOwnedNamespace requests deletion of the environment's namespace and
+// reports whether there is nothing left to wait for. Deletion is
+// asynchronous (Kubernetes garbage-collects the contents), so callers poll
+// until done=true — see reconcileDelete's CleanupTimeout (DAT §7).
+//
+// A namespace owned by another PreviewEnvironment (same prNumber/appName) is
+// never touched: done=true, since there is nothing of pe's to clean up.
+//
+// beforeDelete runs once, right before the namespace deletion is requested —
+// while the namespace's contents (incl. the deployer RoleBinding) still
+// exist. It is not called again on later polls of a terminating namespace.
+func (r *PreviewEnvironmentReconciler) deleteOwnedNamespace(ctx context.Context, pe *ephoraiov1alpha1.PreviewEnvironment, name string, beforeDelete func()) (done bool, err error) {
 	ns := &corev1.Namespace{}
-	err := r.Get(ctx, types.NamespacedName{Name: name}, ns)
-	if apierrors.IsNotFound(err) {
+	if err := r.Get(ctx, types.NamespacedName{Name: name}, ns); err != nil {
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, fmt.Errorf("getting namespace %s: %w", name, err)
+	}
+	if !ownsNamespace(pe, ns) {
 		return true, nil
 	}
-	if err != nil {
-		return false, err
+	if ns.DeletionTimestamp == nil {
+		if beforeDelete != nil {
+			beforeDelete()
+		}
+		if err := r.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("deleting namespace %s: %w", name, err)
+		}
 	}
 	return false, nil
 }

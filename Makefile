@@ -141,18 +141,21 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 ##@ Deployment
 
 .PHONY: install
-install: kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
+install: kustomize ## Install CRDs (+ the deployer ClusterRole needed by `make run`) into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | kubectl apply -f -
+	$(KUSTOMIZE) build config/local | kubectl apply -f -
 
 .PHONY: install-dev
 install-dev: manifests kustomize ## DEV ONLY: install CRDs allowing the public helm/examples repo (local kind cluster).
 	@case "$$(kubectl config current-context)" in kind-*) ;; \
 	  *) echo "Refusing: current context is not a kind cluster"; exit 1 ;; esac
 	$(KUSTOMIZE) build config/dev | kubectl apply -f -
+	$(KUSTOMIZE) build config/local | kubectl apply -f -
 
 .PHONY: uninstall
 uninstall: kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | kubectl delete -f -
+	$(KUSTOMIZE) build config/local | kubectl delete --ignore-not-found -f -
 
 .PHONY: deploy
 deploy: kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
