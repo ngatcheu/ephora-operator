@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"helm.sh/helm/v3/pkg/chart"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -15,11 +16,11 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// createDeployerClusterRole installs the real deployer ClusterRole from
-// config/deployer, under the prefixed name the operator binds.
-func createDeployerClusterRole(t *testing.T, ctx context.Context) {
+// createClusterRoleFromFile installs a real ClusterRole from config/deployer,
+// under the prefixed name the operator binds.
+func createClusterRoleFromFile(t *testing.T, ctx context.Context, file, name string) {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "config", "deployer", "role.yaml"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "config", "deployer", file))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,9 +28,85 @@ func createDeployerClusterRole(t *testing.T, ctx context.Context) {
 	if err := yaml.Unmarshal(data, role); err != nil {
 		t.Fatal(err)
 	}
-	role.Name = DefaultDeployerClusterRole
+	role.Name = name
 	if err := k8sClient.Create(ctx, role); err != nil && !apierrors.IsAlreadyExists(err) {
-		t.Fatalf("creating deployer ClusterRole: %v", err)
+		t.Fatalf("creating ClusterRole %s: %v", name, err)
+	}
+}
+
+func createDeployerClusterRole(t *testing.T, ctx context.Context) {
+	createClusterRoleFromFile(t, ctx, "role.yaml", DefaultDeployerClusterRole)
+}
+
+// can asks the API server whether a user in group may perform verb on
+// resource (optionally a subresource) in namespace.
+func can(t *testing.T, ctx context.Context, group, verb, resource, subresource, namespace string) bool {
+	t.Helper()
+	sar := &authorizationv1.SubjectAccessReview{
+		Spec: authorizationv1.SubjectAccessReviewSpec{
+			User:   "alice",
+			Groups: []string{group, "system:authenticated"},
+			ResourceAttributes: &authorizationv1.ResourceAttributes{
+				Namespace:   namespace,
+				Verb:        verb,
+				Resource:    resource,
+				Subresource: subresource,
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, sar); err != nil {
+		t.Fatalf("SubjectAccessReview: %v", err)
+	}
+	return sar.Status.Allowed
+}
+
+// Developers get read access + port-forward in preview namespaces only,
+// through a per-namespace RoleBinding — never Secrets, never elsewhere.
+func TestViewerGroupsGetNamespaceScopedReadAccess(t *testing.T) {
+	requireEnvtest(t)
+	ctx := context.Background()
+	createDeployerClusterRole(t, ctx)
+	createClusterRoleFromFile(t, ctx, "viewer_role.yaml", DefaultViewerClusterRole)
+
+	pe := newTestPE(t, ctx, "pr-106-viewer", 106, "viewer")
+	key := client.ObjectKeyFromObject(pe)
+	r := newTestReconciler(t)
+	r.ViewerGroups = []string{"devs"}
+	_ = reconcileOnce(ctx, r, key) // namespace + access (chart fetch fails)
+	ns := "preview-pr-106-viewer"
+
+	rb := &rbacv1.RoleBinding{}
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: viewerRoleBindingName}, rb); err != nil {
+		t.Fatalf("viewer RoleBinding not created: %v", err)
+	}
+	if rb.RoleRef.Name != DefaultViewerClusterRole || len(rb.Subjects) != 1 ||
+		rb.Subjects[0].Kind != rbacv1.GroupKind || rb.Subjects[0].Name != "devs" {
+		t.Errorf("viewer RoleBinding = %+v / %+v, want group devs → %s", rb.RoleRef, rb.Subjects, DefaultViewerClusterRole)
+	}
+
+	checks := []struct {
+		verb, resource, subresource, namespace string
+		want                                   bool
+	}{
+		{"list", "pods", "", ns, true},
+		{"get", "pods", "log", ns, true},
+		{"create", "pods", "portforward", ns, true},
+		{"get", "secrets", "", ns, false},
+		{"create", "pods", "exec", ns, false},
+		{"delete", "pods", "", ns, false},
+		{"list", "pods", "", "default", false},
+	}
+	for _, c := range checks {
+		if got := can(t, ctx, "devs", c.verb, c.resource, c.subresource, c.namespace); got != c.want {
+			t.Errorf("devs can %s %s/%s in %s = %v, want %v", c.verb, c.resource, c.subresource, c.namespace, got, c.want)
+		}
+	}
+
+	// Removing the groups removes the binding on the next reconcile.
+	r.ViewerGroups = nil
+	_ = reconcileOnce(ctx, r, key)
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: viewerRoleBindingName}, &rbacv1.RoleBinding{}); !apierrors.IsNotFound(err) {
+		t.Errorf("viewer RoleBinding still present without viewer groups (err = %v)", err)
 	}
 }
 

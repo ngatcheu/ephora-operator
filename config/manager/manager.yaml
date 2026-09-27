@@ -23,6 +23,8 @@ spec:
     metadata:
       labels:
         control-plane: controller-manager
+        # Selected by the metrics Service and the allow-metrics NetworkPolicy.
+        app.kubernetes.io/name: ephora-operator
     spec:
       securityContext:
         runAsNonRoot: true

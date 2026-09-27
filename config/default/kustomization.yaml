@@ -4,7 +4,20 @@ namePrefix: ephora-operator-
 resources:
 - ../crd
 - ../rbac
-# Rights of the per-namespace Helm identity (bound by the operator in each
-# preview namespace, never cluster-wide).
+# ClusterRoles bound by the operator in each preview namespace (Helm identity,
+# developers' read access) — never cluster-wide.
 - ../deployer
 - ../manager
+# Metrics: HTTPS on :8443, readable only by clients allowed to GET /metrics
+# (bind the ephora-operator-metrics-reader ClusterRole to Prometheus).
+- metrics_service.yaml
+# Only namespaces labeled `metrics: enabled` may reach the metrics port.
+- ../network-policy
+# Uncomment if the Prometheus Operator (ServiceMonitor CRD) is installed.
+#- ../prometheus
+
+patches:
+# --metrics-bind-address=:8443 --metrics-secure --metrics-require-rbac
+- path: manager_metrics_patch.yaml
+  target:
+    kind: Deployment

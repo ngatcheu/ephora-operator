@@ -294,7 +294,7 @@ Détails : [DAT §5](dat-ephora-operator.md) et [ADRs](adrs-ephora-operator.md).
 
 ## Observabilité
 
-Métriques Prometheus exposées sur `:8080/metrics` :
+Métriques Prometheus exposées sur `:8080/metrics` en local, et sur **`:8443/metrics` en HTTPS avec authentification** une fois déployé (voir le [runbook](docs/runbook.md#4-surveillance) pour la collecte) :
 
 | Métrique | Type | Description |
 |---|---|---|
@@ -308,7 +308,11 @@ Les erreurs sont aussi remontées en **événements Kubernetes** (`kubectl descr
 
 | Flag | Défaut | Description |
 |---|---|---|
-| `--metrics-bind-address` | `:8080` | Adresse des métriques |
+| `--metrics-bind-address` | `:8080` | Adresse des métriques (`:8443` une fois déployé) |
+| `--metrics-secure` | `false` | Métriques en HTTPS (activé par `make deploy`) |
+| `--metrics-require-rbac` | `false` | Métriques réservées aux clients autorisés à `GET /metrics` (activé par `make deploy`, nécessite `--metrics-secure`) |
+| `--viewer-groups` | *(vide)* | Groupes (ex. les développeurs) ayant accès en lecture + `port-forward` dans chaque namespace de preview |
+| `--viewer-cluster-role` | `ephora-operator-preview-viewer` | ClusterRole lié à ces groupes, namespace par namespace |
 | `--health-probe-bind-address` | `:8081` | Sondes `/healthz` et `/readyz` |
 | `--leader-elect` | `false` | Élection de leader (obligatoire au-delà d'un réplica) |
 | `--orphan-sweep-interval` | `30m` | Fréquence du balayage des namespaces orphelins |
@@ -454,6 +458,8 @@ hack/                    Scripts d'installation des outils
 | [Pull Requests](https://github.com/ngatcheu/ephora-operator/pulls) | Changements en cours de revue |
 | [Issues](https://github.com/ngatcheu/ephora-operator/issues) | Bugs et demandes d'évolution |
 | [Code scanning](https://github.com/ngatcheu/ephora-operator/security/code-scanning) | Résultats Trivy (image et manifestes) |
+| [Guide d'onboarding](docs/onboarding.md) | Intégrer un dépôt applicatif (pour les équipes) |
+| [Runbook d'exploitation](docs/runbook.md) | Installer, surveiller et dépanner l'opérateur (pour l'équipe plateforme) |
 | [DAT](dat-ephora-operator.md) · [ADRs](adrs-ephora-operator.md) | Architecture et décisions |
 | [helm/examples](https://github.com/helm/examples) | Chart `hello-world` utilisé pour les tests sur kind |
 

@@ -47,6 +47,13 @@ const (
 	// namespace. Keep in sync with the `bind` RBAC marker in
 	// previewenvironment_controller.go.
 	DefaultDeployerClusterRole = "ephora-operator-preview-deployer"
+
+	// DefaultViewerClusterRole (config/deployer/viewer_role.yaml, prefixed)
+	// gives developers read access + port-forward in a preview namespace,
+	// bound per namespace to the --viewer-groups. Never includes Secrets.
+	// Keep in sync with the `bind` RBAC marker in the controller.
+	DefaultViewerClusterRole = "ephora-operator-preview-viewer"
+	viewerRoleBindingName    = "ephora-viewer"
 )
 
 // namespaceName derives the dedicated namespace for a PreviewEnvironment per
@@ -309,17 +316,57 @@ func (r *PreviewEnvironmentReconciler) reconcileDeployerIdentity(ctx context.Con
 		}},
 	}
 
+	return r.upsertRoleBinding(ctx, desired)
+}
+
+// reconcileViewerAccess grants ViewerGroups (typically the developers) read
+// access and port-forward in this preview namespace only, through a
+// RoleBinding to the viewer ClusterRole. With no ViewerGroups configured, any
+// previously created binding is removed. Idempotent.
+func (r *PreviewEnvironmentReconciler) reconcileViewerAccess(ctx context.Context, pe *ephoraiov1alpha1.PreviewEnvironment, namespace string) error {
+	if len(r.ViewerGroups) == 0 {
+		stale := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: viewerRoleBindingName, Namespace: namespace}}
+		if err := r.Delete(ctx, stale); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deleting role binding %s/%s: %w", namespace, viewerRoleBindingName, err)
+		}
+		return nil
+	}
+
+	subjects := make([]rbacv1.Subject, 0, len(r.ViewerGroups))
+	for _, group := range r.ViewerGroups {
+		subjects = append(subjects, rbacv1.Subject{
+			Kind:     rbacv1.GroupKind,
+			APIGroup: rbacv1.GroupName,
+			Name:     group,
+		})
+	}
+	return r.upsertRoleBinding(ctx, &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      viewerRoleBindingName,
+			Namespace: namespace,
+			Labels:    ownerLabels(pe),
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: rbacv1.GroupName,
+			Kind:     "ClusterRole",
+			Name:     r.viewerClusterRole(),
+		},
+		Subjects: subjects,
+	})
+}
+
+func (r *PreviewEnvironmentReconciler) upsertRoleBinding(ctx context.Context, desired *rbacv1.RoleBinding) error {
 	existing := &rbacv1.RoleBinding{}
-	err := r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: namespace}, existing)
+	err := r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}, existing)
 	switch {
 	case apierrors.IsNotFound(err):
 		return r.Create(ctx, desired)
 	case err != nil:
-		return fmt.Errorf("getting role binding %s/%s: %w", namespace, desired.Name, err)
+		return fmt.Errorf("getting role binding %s/%s: %w", desired.Namespace, desired.Name, err)
 	case existing.RoleRef != desired.RoleRef:
 		// roleRef is immutable: recreate.
 		if err := r.Delete(ctx, existing); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("deleting stale role binding %s/%s: %w", namespace, desired.Name, err)
+			return fmt.Errorf("deleting stale role binding %s/%s: %w", desired.Namespace, desired.Name, err)
 		}
 		return r.Create(ctx, desired)
 	default:
@@ -334,6 +381,13 @@ func (r *PreviewEnvironmentReconciler) deployerClusterRole() string {
 		return r.DeployerClusterRole
 	}
 	return DefaultDeployerClusterRole
+}
+
+func (r *PreviewEnvironmentReconciler) viewerClusterRole() string {
+	if r.ViewerClusterRole != "" {
+		return r.ViewerClusterRole
+	}
+	return DefaultViewerClusterRole
 }
 
 // deleteOwnedNamespace requests deletion of the environment's namespace and
