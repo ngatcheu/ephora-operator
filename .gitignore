@@ -34,3 +34,6 @@ cover.out
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Release artifacts (built by the release workflow)
+/dist/

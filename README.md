@@ -325,6 +325,28 @@ Les erreurs sont aussi remontées en **événements Kubernetes** (`kubectl descr
 
 ## Déploiement dans un cluster
 
+### Depuis une release (recommandé)
+
+Chaque tag `vX.Y.Z` publie sur GHCR une image **multi-architecture** (amd64, arm64), **scannée** par Trivy, **signée** avec cosign (sans clé, identité OIDC du workflow), avec son **SBOM** (SPDX) et sa **provenance de build**. Le `install.yaml` de la release référence l'image **par son digest** : ce qui est déployé est exactement ce qui a été scanné et signé.
+
+```bash
+VERSION=v0.1.0
+
+# 1. Vérifier la signature de l'image avant de l'installer
+IMAGE=$(curl -sL https://github.com/ngatcheu/ephora-operator/releases/download/$VERSION/install.yaml \
+  | grep -m1 'image: ghcr.io' | awk '{print $2}')
+cosign verify "$IMAGE" \
+  --certificate-identity-regexp '^https://github.com/ngatcheu/ephora-operator/.github/workflows/release.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# 2. Installer
+kubectl apply -f https://github.com/ngatcheu/ephora-operator/releases/download/$VERSION/install.yaml
+```
+
+Publier une nouvelle version : `git tag -a vX.Y.Z -m "…" && git push origin vX.Y.Z` (workflow [`release.yml`](.github/workflows/release.yml)).
+
+### Depuis les sources
+
 ```bash
 # Image
 make docker-build IMG=<registry>/ephora-operator:v0.1.0
