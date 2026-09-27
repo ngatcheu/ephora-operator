@@ -440,7 +440,8 @@ hack/                    Scripts d'installation des outils
 - [x] Helm exécuté avec une identité limitée au namespace
 - [ ] Restreindre l'entrée de la NetworkPolicy à la passerelle interne
 - [ ] Authentification Git pour les dépôts privés
-- [ ] Test de bout en bout de l'opérateur déployé dans le cluster
+- [x] Test de bout en bout de l'opérateur déployé dans le cluster (kind)
+- [x] Métriques HTTPS authentifiées, accès lecture des développeurs
 
 **V2** (derrière un flag, hors du chemin V1 par défaut)
 
