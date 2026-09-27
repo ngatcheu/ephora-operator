@@ -1,2 +1,6 @@
+# ClusterRoles bound by the operator, per preview namespace only:
+#   - role.yaml        → Helm's impersonated identity (what a chart may create)
+#   - viewer_role.yaml → developers' read access + port-forward (--viewer-groups)
 resources:
 - role.yaml
+- viewer_role.yaml

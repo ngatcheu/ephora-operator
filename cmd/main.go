@@ -16,6 +16,7 @@ package main
 import (
 	"flag"
 	"os"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,6 +25,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	ephoraiov1alpha1 "github.com/ngatcheu/ephora-operator/api/v1alpha1"
@@ -44,8 +46,19 @@ func main() {
 	var orphanSweepInterval time.Duration
 	var cleanupTimeout time.Duration
 	var deployerClusterRole string
+	var viewerClusterRole string
+	var viewerGroups string
+	var gitCredentialsDir string
+	var previewIngressNamespaces string
+	var secureMetrics bool
+	var metricsRequireRBAC bool
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to.")
+	flag.BoolVar(&secureMetrics, "metrics-secure", false,
+		"Serve metrics over HTTPS (self-signed certificate generated at startup).")
+	flag.BoolVar(&metricsRequireRBAC, "metrics-require-rbac", false,
+		"Only serve metrics to authenticated clients allowed to GET /metrics (TokenReview + "+
+			"SubjectAccessReview). Requires --metrics-secure.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the health/readiness probes bind to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election. Required when running more than one operator replica.")
@@ -56,6 +69,18 @@ func main() {
 	flag.StringVar(&deployerClusterRole, "deployer-cluster-role", controller.DefaultDeployerClusterRole,
 		"ClusterRole bound, in each preview namespace, to the identity Helm runs as. "+
 			"Must match the `bind` resourceName in the operator's RBAC.")
+	flag.StringVar(&viewerClusterRole, "viewer-cluster-role", controller.DefaultViewerClusterRole,
+		"ClusterRole bound, in each preview namespace, to --viewer-groups. "+
+			"Must match the `bind` resourceName in the operator's RBAC.")
+	flag.StringVar(&viewerGroups, "viewer-groups", "",
+		"Comma-separated groups (e.g. developers) granted read access + port-forward in every "+
+			"preview namespace. Empty: no such access is granted.")
+	flag.StringVar(&gitCredentialsDir, "git-credentials-dir", controller.DefaultGitCredentialsDir,
+		"Directory holding the optional HTTPS git credentials used to clone chart repositories "+
+			"(files `password` = token, `username` = optional). Missing files: anonymous clone.")
+	flag.StringVar(&previewIngressNamespaces, "preview-ingress-namespaces", "",
+		"Comma-separated namespaces allowed to reach preview environments (e.g. the VPN gateway or "+
+			"internal ingress controller namespace). Empty: any in-cluster namespace.")
 
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
@@ -64,11 +89,21 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	setupLog := ctrl.Log.WithName("setup")
 
+	// A bearer token must never travel over plain HTTP.
+	if metricsRequireRBAC && !secureMetrics {
+		setupLog.Error(nil, "--metrics-require-rbac requires --metrics-secure")
+		os.Exit(1)
+	}
+	metricsOpts := metricsserver.Options{BindAddress: metricsAddr, SecureServing: secureMetrics}
+	if metricsRequireRBAC {
+		metricsOpts.FilterProvider = filters.WithAuthenticationAndAuthorization
+	}
+
 	restConfig := ctrl.GetConfigOrDie()
 
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
+		Metrics:                metricsOpts,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "ephora-operator-lock.ephora.io",
@@ -79,12 +114,16 @@ func main() {
 	}
 
 	if err = (&controller.PreviewEnvironmentReconciler{
-		Client:              mgr.GetClient(),
-		Scheme:              mgr.GetScheme(),
-		RESTConfig:          mgr.GetConfig(),
-		Recorder:            mgr.GetEventRecorder("ephora-operator"),
-		CleanupTimeout:      cleanupTimeout,
-		DeployerClusterRole: deployerClusterRole,
+		Client:                   mgr.GetClient(),
+		Scheme:                   mgr.GetScheme(),
+		RESTConfig:               mgr.GetConfig(),
+		Recorder:                 mgr.GetEventRecorder("ephora-operator"),
+		CleanupTimeout:           cleanupTimeout,
+		DeployerClusterRole:      deployerClusterRole,
+		ViewerClusterRole:        viewerClusterRole,
+		ViewerGroups:             splitNonEmpty(viewerGroups),
+		GitCredentialsDir:        gitCredentialsDir,
+		PreviewIngressNamespaces: splitNonEmpty(previewIngressNamespaces),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PreviewEnvironment")
 		os.Exit(1)
@@ -112,4 +151,16 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+// splitNonEmpty parses a comma-separated flag value, trimming blanks and
+// dropping empty items ("" yields nil).
+func splitNonEmpty(s string) []string {
+	var out []string
+	for _, item := range strings.Split(s, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }

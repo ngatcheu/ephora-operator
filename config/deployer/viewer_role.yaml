@@ -1,0 +1,96 @@
+# Read access for developers in a preview namespace, bound PER PREVIEW
+# NAMESPACE by the operator to the groups given in --viewer-groups — never
+# cluster-wide.
+#
+# Enough to follow an environment and reach it (ADR-03: internal access only,
+# through port-forward). Deliberately excluded:
+#   - secrets: even test values stay out of reach;
+#   - pods/exec, pods/attach: a shell would expose mounted secrets and allow
+#     modifying the running environment.
+#
+# Name gets the "ephora-operator-" kustomize prefix: it must match
+# DefaultViewerClusterRole and the `bind` marker in the controller.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: ephora-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: preview-viewer
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - pods/log
+  - services
+  - endpoints
+  - configmaps
+  - persistentvolumeclaims
+  - serviceaccounts
+  - events
+  - resourcequotas
+  - limitranges
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/portforward
+  verbs:
+  - get
+  - create
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - replicasets
+  - statefulsets
+  - daemonsets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  - cronjobs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - autoscaling
+  resources:
+  - horizontalpodautoscalers
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - get
+  - list
+  - watch

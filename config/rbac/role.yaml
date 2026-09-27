@@ -91,6 +91,7 @@ rules:
   - rbac.authorization.k8s.io
   resourceNames:
   - ephora-operator-preview-deployer
+  - ephora-operator-preview-viewer
   resources:
   - clusterroles
   verbs:

@@ -4,6 +4,7 @@
 [![Kubernetes](https://img.shields.io/badge/kubernetes-1.28%2B-326ce5.svg)](https://kubernetes.io)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)](https://go.dev)
 [![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](#feuille-de-route)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 
 **ephora-operator** est un opérateur Kubernetes qui gère tout le cycle de vie des **environnements de preview éphémères** : pour chaque Pull Request, il crée un namespace isolé, y déploie le chart Helm de l'application, suit son état, puis supprime tout automatiquement à l'expiration du TTL ou à la fermeture de la PR.
 
@@ -270,11 +271,12 @@ Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `pe
 
 | Mesure | Détail |
 |---|---|
-| **Isolation réseau** | `NetworkPolicy` `ephora-default` dans chaque namespace : entrée depuis le namespace et le cluster, sortie limitée au DNS et au cluster — pas d'Internet |
+| **Isolation réseau** | `NetworkPolicy` `ephora-default` dans chaque namespace : entrée depuis le namespace lui-même et depuis les seuls namespaces de `--preview-ingress-namespaces` (passerelle VPN, ingress interne ; tout le cluster si non configuré), sortie limitée au DNS et au cluster — pas d'Internet |
 | **Quotas** | `ResourceQuota` (2 CPU / 4 Gi demandés, 4 CPU / 8 Gi max, 20 pods) + `LimitRange` (valeurs par défaut par conteneur) |
 | **Source des charts** | Liste blanche d'hôtes Git dans le schéma de la CRD |
 | **Injection d'arguments git** | Révision commençant par `-` refusée (CRD + code), `git checkout <rev> --` |
 | **Traversée de chemin** | `chartPath` sortant du dépôt cloné (`../..`) refusé |
+| **Accès aux dépôts privés** | Jeton HTTPS en lecture seule, monté depuis un Secret (aucun droit RBAC sur les Secrets). Transmis à git en en-tête `Authorization` via l'environnement, **limité à l'hôte du dépôt**, redirections désactivées : il n'apparaît ni dans la ligne de commande, ni dans l'URL, ni dans le dépôt cloné, ni dans les messages d'erreur |
 | **Liens symboliques** | Clone avec `core.symlinks=false` : un lien dans le chart ne peut pas exposer un fichier de l'opérateur (ex. son jeton de ServiceAccount) |
 | **Isolation des environnements** | Un namespace n'est utilisé et supprimé que par le `PreviewEnvironment` qui l'a créé (deux objets avec le même `prNumber`/`appName` ne le partagent pas) |
 | **Coût** | TTL borné à 168h au niveau du schéma |
@@ -286,14 +288,14 @@ Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `pe
 
 **Limites connues** (à traiter avant la production) :
 
-- La `NetworkPolicy` accepte l'entrée depuis **tous** les namespaces → à limiter à la passerelle interne (VPN, ingress interne).
-- Pas encore d'authentification Git : seuls les dépôts accessibles sans identifiants sont clonables.
+- Sans `--preview-ingress-namespaces`, la `NetworkPolicy` accepte l'entrée depuis **tous** les namespaces : à configurer en production.
+- Un seul identifiant Git pour tout l'opérateur : il doit pouvoir lire les dépôts de toutes les équipes intégrées.
 
 Détails : [DAT §5](dat-ephora-operator.md) et [ADRs](adrs-ephora-operator.md).
 
 ## Observabilité
 
-Métriques Prometheus exposées sur `:8080/metrics` :
+Métriques Prometheus exposées sur `:8080/metrics` en local, et sur **`:8443/metrics` en HTTPS avec authentification** une fois déployé (voir le [runbook](docs/runbook.md#4-surveillance) pour la collecte) :
 
 | Métrique | Type | Description |
 |---|---|---|
@@ -307,7 +309,13 @@ Les erreurs sont aussi remontées en **événements Kubernetes** (`kubectl descr
 
 | Flag | Défaut | Description |
 |---|---|---|
-| `--metrics-bind-address` | `:8080` | Adresse des métriques |
+| `--metrics-bind-address` | `:8080` | Adresse des métriques (`:8443` une fois déployé) |
+| `--metrics-secure` | `false` | Métriques en HTTPS (activé par `make deploy`) |
+| `--metrics-require-rbac` | `false` | Métriques réservées aux clients autorisés à `GET /metrics` (activé par `make deploy`, nécessite `--metrics-secure`) |
+| `--viewer-groups` | *(vide)* | Groupes (ex. les développeurs) ayant accès en lecture + `port-forward` dans chaque namespace de preview |
+| `--viewer-cluster-role` | `ephora-operator-preview-viewer` | ClusterRole lié à ces groupes, namespace par namespace |
+| `--preview-ingress-namespaces` | *(vide : tous)* | Namespaces autorisés à joindre les environnements (passerelle VPN, ingress interne), en plus du trafic interne au namespace |
+| `--git-credentials-dir` | `/var/run/ephora/git` | Dossier du jeton Git optionnel (fichiers `password` et `username`) ; absent : clone anonyme |
 | `--health-probe-bind-address` | `:8081` | Sondes `/healthz` et `/readyz` |
 | `--leader-elect` | `false` | Élection de leader (obligatoire au-delà d'un réplica) |
 | `--orphan-sweep-interval` | `30m` | Fréquence du balayage des namespaces orphelins |
@@ -343,7 +351,7 @@ make undeploy
 | [kubectl](https://kubernetes.io/docs/tasks/tools/) | compatible avec le cluster | |
 | [Helm](https://helm.sh/docs/intro/install/) | v3 | Inspection des releases |
 | [golangci-lint](https://golangci-lint.run/) | v2 | Lint |
-| git | ≥ 2.24 | Clone des charts (aussi requis à l'exécution) |
+| git | ≥ 2.31 | Clone des charts (aussi requis à l'exécution) |
 
 `controller-gen`, `setup-envtest` et `kustomize` sont téléchargés automatiquement dans `./bin` par le Makefile.
 
@@ -433,9 +441,10 @@ hack/                    Scripts d'installation des outils
 - [x] Garde-fous par namespace (NetworkPolicy, quotas)
 - [x] Tests unitaires + envtest, CI DevSecOps
 - [x] Helm exécuté avec une identité limitée au namespace
-- [ ] Restreindre l'entrée de la NetworkPolicy à la passerelle interne
-- [ ] Authentification Git pour les dépôts privés
-- [ ] Test de bout en bout de l'opérateur déployé dans le cluster
+- [x] Entrée réseau restreinte à la passerelle interne (`--preview-ingress-namespaces`)
+- [x] Authentification Git pour les dépôts privés (jeton HTTPS)
+- [x] Test de bout en bout de l'opérateur déployé dans le cluster (kind)
+- [x] Métriques HTTPS authentifiées, accès lecture des développeurs
 
 **V2** (derrière un flag, hors du chemin V1 par défaut)
 
@@ -453,6 +462,8 @@ hack/                    Scripts d'installation des outils
 | [Pull Requests](https://github.com/ngatcheu/ephora-operator/pulls) | Changements en cours de revue |
 | [Issues](https://github.com/ngatcheu/ephora-operator/issues) | Bugs et demandes d'évolution |
 | [Code scanning](https://github.com/ngatcheu/ephora-operator/security/code-scanning) | Résultats Trivy (image et manifestes) |
+| [Guide d'onboarding](docs/onboarding.md) | Intégrer un dépôt applicatif (pour les équipes) |
+| [Runbook d'exploitation](docs/runbook.md) | Installer, surveiller et dépanner l'opérateur (pour l'équipe plateforme) |
 | [DAT](dat-ephora-operator.md) · [ADRs](adrs-ephora-operator.md) | Architecture et décisions |
 | [helm/examples](https://github.com/helm/examples) | Chart `hello-world` utilisé pour les tests sur kind |
 
@@ -489,4 +500,6 @@ hack/                    Scripts d'installation des outils
 
 ## Licence
 
-Apache 2.0
+© 2026 ngatcheu — distribué sous licence **GNU Affero General Public License v3.0 ou ultérieure** (`AGPL-3.0-or-later`). Texte complet : [LICENSE](LICENSE).
+
+En résumé : vous pouvez utiliser, modifier et redistribuer ce logiciel, y compris commercialement, à condition que toute version modifiée — **y compris lorsqu'elle est utilisée pour fournir un service accessible par le réseau** — soit publiée sous la même licence, avec son code source.

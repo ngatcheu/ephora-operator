@@ -68,6 +68,21 @@ type PreviewEnvironmentReconciler struct {
 	// ClusterRole bound, per preview namespace, to the identity Helm runs as.
 	DeployerClusterRole string
 
+	// ViewerGroups are granted, per preview namespace, the ViewerClusterRole
+	// (read access + port-forward, no Secrets). Empty: no such access.
+	ViewerGroups []string
+
+	// ViewerClusterRole overrides DefaultViewerClusterRole when set.
+	ViewerClusterRole string
+
+	// GitCredentialsDir overrides DefaultGitCredentialsDir when set (see
+	// gitauth.go).
+	GitCredentialsDir string
+
+	// PreviewIngressNamespaces restricts which namespaces may reach preview
+	// environments (besides same-namespace traffic). Empty: any namespace.
+	PreviewIngressNamespaces []string
+
 	// WorkDir overrides the base directory used for chart checkouts
 	// (defaults to os.TempDir()); mainly useful for tests.
 	WorkDir string
@@ -89,7 +104,7 @@ type PreviewEnvironmentReconciler struct {
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=impersonate,resourceNames=ephora-deployer
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=bind,resourceNames=ephora-operator-preview-deployer
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=bind,resourceNames=ephora-operator-preview-deployer;ephora-operator-preview-viewer
 
 func (r *PreviewEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -164,6 +179,9 @@ func (r *PreviewEnvironmentReconciler) reconcileNormal(ctx context.Context, pe *
 	}
 	if err := r.reconcileDeployerIdentity(ctx, pe, ns); err != nil {
 		return r.failAndRequeue(ctx, pe, "DeployerIdentityReconcileFailed", err)
+	}
+	if err := r.reconcileViewerAccess(ctx, pe, ns); err != nil {
+		return r.failAndRequeue(ctx, pe, "ViewerAccessReconcileFailed", err)
 	}
 
 	if pe.Status.Phase == "" || pe.Status.Phase == ephoraiov1alpha1.PhasePending {

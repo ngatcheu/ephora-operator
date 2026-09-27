@@ -256,6 +256,48 @@ func TestReconcileRefusesSharedNamespace(t *testing.T) {
 	}
 }
 
+// With --preview-ingress-namespaces, only those namespaces may reach an
+// environment; without it, any namespace (previous behavior). Existing
+// NetworkPolicies follow configuration changes.
+func TestNetworkPolicyIngressRestriction(t *testing.T) {
+	requireEnvtest(t)
+	ctx := context.Background()
+	pe := newTestPE(t, ctx, "pr-107-ingress", 107, "ingress")
+	key := client.ObjectKeyFromObject(pe)
+	npKey := types.NamespacedName{Namespace: "preview-pr-107-ingress", Name: networkPolicyName}
+	r := newTestReconciler(t)
+
+	internalAccess := func() *metav1.LabelSelector {
+		t.Helper()
+		np := &networkingv1.NetworkPolicy{}
+		if err := k8sClient.Get(ctx, npKey, np); err != nil {
+			t.Fatalf("getting NetworkPolicy: %v", err)
+		}
+		if len(np.Spec.Ingress) != 2 || len(np.Spec.Ingress[1].From) != 1 {
+			t.Fatalf("unexpected ingress rules: %+v", np.Spec.Ingress)
+		}
+		return np.Spec.Ingress[1].From[0].NamespaceSelector
+	}
+
+	r.PreviewIngressNamespaces = []string{"vpn-gateway", "ingress-internal"}
+	_ = reconcileOnce(ctx, r, key)
+	sel := internalAccess()
+	if len(sel.MatchExpressions) != 1 {
+		t.Fatalf("namespace selector = %+v, want one matchExpression", sel)
+	}
+	req := sel.MatchExpressions[0]
+	if req.Key != corev1.LabelMetadataName || req.Operator != metav1.LabelSelectorOpIn ||
+		strings.Join(req.Values, ",") != "vpn-gateway,ingress-internal" {
+		t.Errorf("namespace selector requirement = %+v, want %s In [vpn-gateway ingress-internal]", req, corev1.LabelMetadataName)
+	}
+
+	r.PreviewIngressNamespaces = nil
+	_ = reconcileOnce(ctx, r, key)
+	if sel := internalAccess(); len(sel.MatchLabels) != 0 || len(sel.MatchExpressions) != 0 {
+		t.Errorf("namespace selector = %+v, want empty (all namespaces) without restriction", sel)
+	}
+}
+
 // TestCRDValidation guards the schema-level security/cost controls from
 // CLAUDE.md: TTL bound, repo allow-list, revision format, immutable prNumber,
 // and the Helm release name length limit.
