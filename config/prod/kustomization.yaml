@@ -1,0 +1,48 @@
+# Production / pilot configuration, layered on a SIGNED RELEASE (not on the
+# sources): what gets deployed is the scanned, cosign-signed image pinned by
+# digest in that release's install.yaml.
+#
+# Every value marked CHANGE-ME must be adapted before applying.
+# Checklist: docs/pilot-checklist.md
+#
+#   kustomize build config/prod | kubectl apply -f -
+#
+# Never commit secrets here (git token): see docs/runbook.md §7.3.
+
+resources:
+# Pinned release — bump deliberately, after reading its notes and verifying
+# its signature (README, "Depuis une release").
+- https://github.com/ngatcheu/ephora-operator/releases/download/v0.1.2/install.yaml
+# Management namespace + per-team access (one file per onboarded team).
+- management-namespace.yaml
+- team-example.yaml
+
+patches:
+# 1. Allow-list of chart repositories: your real internal Git host.
+#    Still a restriction (security control) — only the host changes.
+- target:
+    kind: CustomResourceDefinition
+    name: previewenvironments.ephora.io
+  patch: |-
+    - op: test
+      path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/source/properties/repo/pattern
+      value: ^https://github\.internal/.+$
+    - op: replace
+      path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/source/properties/repo/pattern
+      value: ^https://github\.CHANGE-ME\.com/.+$
+
+# 2. Operator flags for production.
+- target:
+    kind: Deployment
+    name: ephora-operator-controller-manager
+  patch: |-
+    # Only these namespaces may reach preview environments (VPN gateway,
+    # internal ingress controller). Without it: the whole cluster.
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: --preview-ingress-namespaces=CHANGE-ME-vpn-gateway
+    # Groups (from your identity provider) given read access + port-forward
+    # in every preview namespace.
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: --viewer-groups=CHANGE-ME-developers
