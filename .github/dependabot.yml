@@ -11,6 +11,14 @@ updates:
           - "k8s.io/*"
           - "sigs.k8s.io/*"
           - "helm.sh/*"
+      # OpenTelemetry modules are versioned in lockstep.
+      opentelemetry:
+        patterns:
+          - "go.opentelemetry.io/*"
+      # golang.org/x/* security fixes often span several of them.
+      golang-x:
+        patterns:
+          - "golang.org/x/*"
 
   - package-ecosystem: github-actions
     directory: /
