@@ -74,7 +74,10 @@ CI apply penv ─▶ finalizer ─▶ namespace + garde-fous + identité ─▶ 
 **Depuis une release (recommandé)** : image signée, scannée, avec SBOM, référencée par digest. Vérifier la signature puis appliquer `install.yaml` (commandes dans la section *Déploiement* du [README](../README.md#depuis-une-release-recommandé) et dans les notes de chaque [release](https://github.com/ngatcheu/ephora-operator/releases)).
 
 ```bash
-kubectl apply -f https://github.com/ngatcheu/ephora-operator/releases/download/v0.1.1/install.yaml
+# En production, épingler une version précise (…/releases/download/vX.Y.Z/install.yaml)
+# plutôt que "latest", pour des déploiements reproductibles.
+curl -fsSL https://github.com/ngatcheu/ephora-operator/releases/latest/download/install.yaml -o install.yaml
+kubectl apply -f install.yaml
 kubectl create namespace ephora-previews          # namespace de gestion des PreviewEnvironment
 ```
 

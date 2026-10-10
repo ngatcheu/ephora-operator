@@ -1,6 +1,6 @@
 # Document d'Architecture Technique (DAT) — ephora-operator
 
-> Version du document : **v0.1.1** (aligné sur la release du même nom). Décisions d'architecture : [ADR-01 à ADR-06](adrs-ephora-operator.md).
+> Version du document : **v0.1.x** (aligné sur les releases v0.1). Décisions d'architecture : [ADR-01 à ADR-06](adrs-ephora-operator.md).
 
 ## 1. Contexte et objectifs
 

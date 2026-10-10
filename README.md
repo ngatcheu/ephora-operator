@@ -330,18 +330,23 @@ Les erreurs sont aussi remontées en **événements Kubernetes** (`kubectl descr
 Chaque tag `vX.Y.Z` publie sur GHCR une image **multi-architecture** (amd64, arm64), **scannée** par Trivy, **signée** avec cosign (sans clé, identité OIDC du workflow), avec son **SBOM** (SPDX) et sa **provenance de build**. Le `install.yaml` de la release référence l'image **par son digest** : ce qui est déployé est exactement ce qui a été scanné et signé.
 
 ```bash
-VERSION=v0.1.1   # dernière version : https://github.com/ngatcheu/ephora-operator/releases/latest
+# Dernière version (ou une version précise : .../releases/download/vX.Y.Z/install.yaml)
+URL=https://github.com/ngatcheu/ephora-operator/releases/latest/download/install.yaml
 
-# 1. Vérifier la signature de l'image avant de l'installer
-IMAGE=$(curl -sL https://github.com/ngatcheu/ephora-operator/releases/download/$VERSION/install.yaml \
-  | grep -m1 'image: ghcr.io' | awk '{print $2}')
+# 1. Télécharger une seule fois : on installe exactement le fichier vérifié
+curl -fsSL "$URL" -o install.yaml
+
+# 2. Vérifier la signature de l'image qu'il référence
+IMAGE=$(grep -m1 'image: ghcr.io' install.yaml | awk '{print $2}')
 cosign verify "$IMAGE" \
   --certificate-identity-regexp '^https://github.com/ngatcheu/ephora-operator/.github/workflows/release.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-# 2. Installer
-kubectl apply -f https://github.com/ngatcheu/ephora-operator/releases/download/$VERSION/install.yaml
+# 3. Installer
+kubectl apply -f install.yaml
 ```
+
+Liste des versions et notes de release : https://github.com/ngatcheu/ephora-operator/releases
 
 Publier une nouvelle version : `git tag -a vX.Y.Z -m "…" && git push origin vX.Y.Z` (workflow [`release.yml`](.github/workflows/release.yml)).
 
