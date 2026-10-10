@@ -333,7 +333,21 @@ En premier lieu, demander à l'équipe de réduire ses ressources pour la previe
 3. Récupérer le chart à la révision concernée et l'analyser. Pour rappel, ce qu'un chart **ne peut pas** faire : agir hors de son namespace, lire des secrets ailleurs (`lookup`), créer des ressources cluster, de l'Ingress ou du RBAC, accéder à Internet, lire les fichiers de l'opérateur via un lien symbolique.
 4. Vérifier les logs d'audit de l'API server pour l'utilisateur `system:serviceaccount:preview-pr-<n>-<app>:ephora-deployer`.
 
-### 6.8 Urgence : tout supprimer (coût, incident)
+### 6.8 L'opérateur redémarre (`Restart Count` qui augmente)
+
+```bash
+kubectl -n ephora-operator-system describe pod -l control-plane=controller-manager | grep -A6 "Last State"
+kubectl -n ephora-operator-system logs deploy/ephora-operator-controller-manager --previous | tail -15
+```
+
+| Constat | Cause | Action |
+|---|---|---|
+| `Reason: Error`, code 1, logs `Failed to renew lease` puis `leader election lost` | L'API server n'a pas répondu à temps (panne, surcharge, mise en veille d'un cluster local) ; l'opérateur s'arrête **volontairement** pour ne jamais avoir deux instances actives | Aucune sur un incident isolé : il redémarre et reprend tous les environnements. Si c'est fréquent, investiguer la santé de l'API server |
+| `Reason: OOMKilled`, code 137 | Mémoire insuffisante (≈ 76 Mio au pic pour 50 environnements créés d'un coup) | Augmenter `resources.limits.memory` dans `config/manager/manager.yaml` |
+| Arrêts par la sonde de vie (`Liveness probe failed` dans les événements) | Opérateur bloqué | Récupérer les logs, ouvrir un ticket |
+| `panic` dans les logs | Bug de l'opérateur | Récupérer les logs, ouvrir un ticket |
+
+### 6.9 Urgence : tout supprimer (coût, incident)
 
 ```bash
 kubectl delete penv --all -n ephora-previews --wait=false

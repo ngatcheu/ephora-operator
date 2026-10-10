@@ -163,7 +163,7 @@ status:
 | **Délai de provisioning** | < 3 minutes entre application de la CRD et phase `Running` | 5,7 s (chart `hello-world`) |
 | **Fiabilité du nettoyage** | 0 namespace orphelin après 1h au-delà du TTL | Finalizer + délai maximal + balayage (section 4) |
 | **Observabilité** | Métriques Prometheus : `preview_environments_active`, `preview_environment_provisioning_duration_seconds`, `preview_environment_cleanup_total{reason}` | Exposées et vérifiées en cluster |
-| **Scalabilité** | Au moins 50 environnements actifs simultanés sans dégradation | Non mesuré à ce jour |
+| **Scalabilité** | Au moins 50 environnements actifs simultanés sans dégradation | 50 créés d'un coup : tous `Running` en 90 s, p95 83 s, nettoyage complet en 30 s, mémoire de l'opérateur 76 Mio au pic (`hack/loadtest.sh`, kind, sans pods). Traitement séquentiel (~1,8 s par environnement) : le délai croît linéairement avec la taille d'une rafale |
 
 ## 7. Risques identifiés
 
