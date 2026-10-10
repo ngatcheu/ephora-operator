@@ -220,4 +220,4 @@ Un environnement en `Failed` **réessaie automatiquement**, avec un délai crois
 
 - Canal de support : `#preview-environments` *(à adapter)*
 - Référents plateforme : *(à compléter)*
-- Documentation technique : [README](../README.md) · [Architecture (DAT)](../dat-ephora-operator.md)
+- Documentation technique : [README](../README.md) · [Architecture (DAT)](dat-ephora-operator.md) · [ADRs](adrs-ephora-operator.md)
