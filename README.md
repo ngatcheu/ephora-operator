@@ -452,6 +452,7 @@ config/
   deployer/   Droits des charts       local/    Prérequis pour `make run`
   manager/    Déploiement             default/  Kustomize de déploiement
   dev/        CRD de dev + exemple    samples/  Exemple de PreviewEnvironment
+  prod/       Overlay pilote/prod, basé sur une release signée
 hack/                    Scripts d'installation des outils
 ```
 
@@ -491,6 +492,7 @@ hack/                    Scripts d'installation des outils
 | [Code scanning](https://github.com/ngatcheu/ephora-operator/security/code-scanning) | Résultats Trivy (image et manifestes) |
 | [Guide d'onboarding](docs/onboarding.md) | Intégrer un dépôt applicatif (pour les équipes) |
 | [Runbook d'exploitation](docs/runbook.md) | Installer, surveiller et dépanner l'opérateur (pour l'équipe plateforme) |
+| [Checklist du pilote](docs/pilot-checklist.md) | Mise en service sur un vrai cluster avec l'overlay `config/prod` |
 | [DAT](docs/dat-ephora-operator.md) · [ADRs](docs/adrs-ephora-operator.md) | Architecture et décisions |
 | [helm/examples](https://github.com/helm/examples) | Chart `hello-world` utilisé pour les tests sur kind |
 

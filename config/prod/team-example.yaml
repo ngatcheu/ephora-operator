@@ -1,0 +1,41 @@
+# Access for ONE onboarded team — copy this file per team (team-<name>.yaml),
+# replace "example", and list it in kustomization.yaml.
+#
+# CI: may only create/update/delete PreviewEnvironment objects in the
+# management namespace. Its token is created separately (docs/runbook.md §3,
+# `kubectl create token`) and stored as the GitHub secret PREVIEW_KUBECONFIG.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-example
+  namespace: ephora-previews
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-example
+  namespace: ephora-previews
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ephora-operator-previewenvironment-editor-role
+subjects:
+- kind: ServiceAccount
+  name: ci-example
+  namespace: ephora-previews
+---
+# Developers: list the team's PreviewEnvironment objects. Access INSIDE
+# preview namespaces comes from --viewer-groups (set on the operator).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: devs-example
+  namespace: ephora-previews
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ephora-operator-previewenvironment-viewer-role
+subjects:
+- kind: Group
+  apiGroup: rbac.authorization.k8s.io
+  name: CHANGE-ME-example-developers
