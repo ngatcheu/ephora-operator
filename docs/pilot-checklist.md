@@ -15,7 +15,7 @@ Références : [runbook](runbook.md) · [guide d'onboarding](onboarding.md) · [
 |---|---|---|
 | Adoption | % des PR de l'équipe avec un environnement | > 80 % |
 | Rapidité | `preview_environment_provisioning_duration_seconds` (p95) | < 3 min |
-| Fiabilité | Environnements `Failed` dus à la plateforme (hors erreurs de chart) | ≈ 0 |
+| Fiabilité | Environnements `Failed` dus à la plateforme (hors erreurs de chart) ; redémarrages du pod opérateur | ≈ 0 |
 | Nettoyage | Namespaces orphelins 1h après le TTL | 0 |
 | Satisfaction | Retour qualitatif de l'équipe en fin de pilote | positif |
 | Valeur | Délai de relecture des PR, avant / pendant le pilote | en baisse |
@@ -165,6 +165,6 @@ Si le pilote doit être interrompu :
 
 - [ ] Critères de succès (§0) atteints ou écarts compris.
 - [ ] Ajustements identifiés pendant le pilote intégrés (documentation, quotas, rôle de déploiement).
-- [ ] Capacité du cluster validée pour le nombre d'équipes visé (objectif DAT : 50 environnements simultanés, **non mesuré à ce jour**).
+- [ ] Capacité validée pour le nombre d'équipes visé. L'opérateur tient 50 créations simultanées (p95 83 s sur kind, voir [DAT §6](dat-ephora-operator.md#6-exigences-non-fonctionnelles)) ; reste à vérifier la capacité des **nœuds** à héberger les pods des environnements. Rejouer le test sur le cluster cible : `bash hack/loadtest.sh` (sur un cluster de test, le script refuse les contextes autres que kind).
 - [ ] Planning d'embarquement des équipes suivantes.
 - [ ] Bilan chiffré (adoption, délai de relecture, coûts évités) partagé, en interne ou dans une publication.
