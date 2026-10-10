@@ -91,7 +91,7 @@ CI (GitHub Actions)   ──kubectl apply/delete──▶  PreviewEnvironment (C
 4. Clone de `spec.source.repo` à `spec.source.revision`, chargement du chart `spec.source.chartPath`, puis `helm install` ou `helm upgrade` avec `spec.valuesOverride`.
 5. À l'expiration ou à la suppression de la CRD : `helm uninstall`, suppression du namespace, puis retrait du finalizer (après au plus `--cleanup-timeout` ; le balayage des orphelins prend le relais si besoin).
 
-> **Choix d'architecture** : le projet est scaffoldé avec Operator SDK (plugin Helm), mais la réconciliation est écrite en Go : le chart à déployer est dynamique par instance, ce que le reconciler Helm générique ne sait pas faire. Toute la logique de déploiement reste déléguée au SDK Helm (install/upgrade/uninstall). Voir ADR-01 dans [adrs-ephora-operator.md](adrs-ephora-operator.md).
+> **Choix d'architecture** : le projet est scaffoldé avec Operator SDK (plugin Helm), mais la réconciliation est écrite en Go : le chart à déployer est dynamique par instance, ce que le reconciler Helm générique ne sait pas faire. Toute la logique de déploiement reste déléguée au SDK Helm (install/upgrade/uninstall). Voir ADR-01 dans [adrs-ephora-operator.md](docs/adrs-ephora-operator.md).
 
 ## Démarrage rapide (kind)
 
@@ -291,7 +291,7 @@ Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `pe
 - Sans `--preview-ingress-namespaces`, la `NetworkPolicy` accepte l'entrée depuis **tous** les namespaces : à configurer en production.
 - Un seul identifiant Git pour tout l'opérateur : il doit pouvoir lire les dépôts de toutes les équipes intégrées.
 
-Détails : [DAT §5](dat-ephora-operator.md) et [ADRs](adrs-ephora-operator.md).
+Détails : [DAT §5](docs/dat-ephora-operator.md) et [ADRs](docs/adrs-ephora-operator.md).
 
 ## Observabilité
 
@@ -452,8 +452,8 @@ hack/                    Scripts d'installation des outils
 
 ### Documentation d'architecture
 
-- [dat-ephora-operator.md](dat-ephora-operator.md) — Document d'architecture technique (composants, API, réconciliation, sécurité, exigences non fonctionnelles)
-- [adrs-ephora-operator.md](adrs-ephora-operator.md) — Décisions d'architecture (ADR-01 à ADR-04)
+- [docs/dat-ephora-operator.md](docs/dat-ephora-operator.md) — Document d'architecture technique (composants, API, réconciliation, sécurité, exigences non fonctionnelles)
+- [docs/adrs-ephora-operator.md](docs/adrs-ephora-operator.md) — Décisions d'architecture (ADR-01 à ADR-06)
 
 ## Feuille de route
 
@@ -486,7 +486,7 @@ hack/                    Scripts d'installation des outils
 | [Code scanning](https://github.com/ngatcheu/ephora-operator/security/code-scanning) | Résultats Trivy (image et manifestes) |
 | [Guide d'onboarding](docs/onboarding.md) | Intégrer un dépôt applicatif (pour les équipes) |
 | [Runbook d'exploitation](docs/runbook.md) | Installer, surveiller et dépanner l'opérateur (pour l'équipe plateforme) |
-| [DAT](dat-ephora-operator.md) · [ADRs](adrs-ephora-operator.md) | Architecture et décisions |
+| [DAT](docs/dat-ephora-operator.md) · [ADRs](docs/adrs-ephora-operator.md) | Architecture et décisions |
 | [helm/examples](https://github.com/helm/examples) | Chart `hello-world` utilisé pour les tests sur kind |
 
 ### Concepts Kubernetes
