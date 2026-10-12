@@ -314,6 +314,7 @@ Les erreurs sont aussi remontées en **événements Kubernetes** (`kubectl descr
 | `--metrics-require-rbac` | `false` | Métriques réservées aux clients autorisés à `GET /metrics` (activé par `make deploy`, nécessite `--metrics-secure`) |
 | `--viewer-groups` | *(vide)* | Groupes (ex. les développeurs) ayant accès en lecture + `port-forward` dans chaque namespace de preview |
 | `--viewer-cluster-role` | `ephora-operator-preview-viewer` | ClusterRole lié à ces groupes, namespace par namespace |
+| `--max-concurrent-reconciles` | `4` | Environnements traités en parallèle (clone + `helm install`) |
 | `--preview-ingress-namespaces` | *(vide : tous)* | Namespaces autorisés à joindre les environnements (passerelle VPN, ingress interne), en plus du trafic interne au namespace |
 | `--git-credentials-dir` | `/var/run/ephora/git` | Dossier du jeton Git optionnel (fichiers `password` et `username`) ; absent : clone anonyme |
 | `--health-probe-bind-address` | `:8081` | Sondes `/healthz` et `/readyz` |

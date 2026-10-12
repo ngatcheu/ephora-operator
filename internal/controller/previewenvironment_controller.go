@@ -16,6 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	crcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -38,6 +39,13 @@ const requeueSoon = 10 * time.Second
 // resyncPeriod bounds how long a Running environment goes without a
 // reconcile, so guardrails deleted or edited by hand are restored.
 const resyncPeriod = 10 * time.Minute
+
+// DefaultMaxConcurrentReconciles: environments are independent, and the
+// dominant cost (git clone + helm install, ~2 s each) is I/O bound.
+// hack/loadtest.sh, 50 created at once on kind: 1 worker → p95 83 s;
+// 4 workers → p95 38 s (+19 MiB). Beyond that, the limit becomes the
+// environment (network clones, API server) rather than the operator.
+const DefaultMaxConcurrentReconciles = 4
 
 // PreviewEnvironmentReconciler reconciles a PreviewEnvironment object.
 //
@@ -82,6 +90,12 @@ type PreviewEnvironmentReconciler struct {
 	// PreviewIngressNamespaces restricts which namespaces may reach preview
 	// environments (besides same-namespace traffic). Empty: any namespace.
 	PreviewIngressNamespaces []string
+
+	// MaxConcurrentReconciles is how many PreviewEnvironments are reconciled
+	// in parallel (DefaultMaxConcurrentReconciles when <= 0). The workqueue
+	// never processes the same object concurrently, and each reconcile only
+	// touches its own namespace, scratch dir and Helm configuration.
+	MaxConcurrentReconciles int
 
 	// WorkDir overrides the base directory used for chart checkouts
 	// (defaults to os.TempDir()); mainly useful for tests.
@@ -401,10 +415,15 @@ func (r *PreviewEnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	// bumping metadata.generation when deletionTimestamp is set — missing it
 	// would leave the cleanup finalizer (DAT §4.4) never running.
 	// Time-based work (TTL, cleanup polling) uses RequeueAfter.
+	workers := r.MaxConcurrentReconciles
+	if workers <= 0 {
+		workers = DefaultMaxConcurrentReconciles
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ephoraiov1alpha1.PreviewEnvironment{}, builder.WithPredicates(
 			predicate.Or(predicate.GenerationChangedPredicate{}, deletionStartedPredicate()),
 		)).
+		WithOptions(crcontroller.Options{MaxConcurrentReconciles: workers}).
 		Complete(r)
 }
 

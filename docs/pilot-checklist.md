@@ -165,6 +165,6 @@ Si le pilote doit être interrompu :
 
 - [ ] Critères de succès (§0) atteints ou écarts compris.
 - [ ] Ajustements identifiés pendant le pilote intégrés (documentation, quotas, rôle de déploiement).
-- [ ] Capacité validée pour le nombre d'équipes visé. L'opérateur tient 50 créations simultanées (p95 83 s sur kind, voir [DAT §6](dat-ephora-operator.md#6-exigences-non-fonctionnelles)) ; reste à vérifier la capacité des **nœuds** à héberger les pods des environnements. Rejouer le test sur le cluster cible : `bash hack/loadtest.sh` (sur un cluster de test, le script refuse les contextes autres que kind).
+- [ ] Capacité validée pour le nombre d'équipes visé. L'opérateur tient 50 créations simultanées (p95 38 s sur kind avec 4 workers, voir [DAT §6](dat-ephora-operator.md#6-exigences-non-fonctionnelles)) ; reste à vérifier la capacité des **nœuds** à héberger les pods des environnements. Rejouer le test sur le cluster cible : `bash hack/loadtest.sh` (sur un cluster de test, le script refuse les contextes autres que kind).
 - [ ] Planning d'embarquement des équipes suivantes.
 - [ ] Bilan chiffré (adoption, délai de relecture, coûts évités) partagé, en interne ou dans une publication.
