@@ -51,6 +51,7 @@ func main() {
 	var gitCredentialsDir string
 	var previewIngressNamespaces string
 	var maxConcurrentReconciles int
+	var podSecurityLevel string
 	var secureMetrics bool
 	var metricsRequireRBAC bool
 
@@ -84,6 +85,9 @@ func main() {
 			"internal ingress controller namespace). Empty: any in-cluster namespace.")
 	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", controller.DefaultMaxConcurrentReconciles,
 		"How many PreviewEnvironments are reconciled in parallel (git clone + helm install each).")
+	flag.StringVar(&podSecurityLevel, "preview-pod-security", controller.DefaultPodSecurityLevel,
+		"Pod Security Admission level enforced in preview namespaces: baseline or restricted "+
+			"(privileged is not allowed). Violations of restricted are always reported as warnings.")
 
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
@@ -91,6 +95,12 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	setupLog := ctrl.Log.WithName("setup")
+
+	// "privileged" (or a typo) would silently disable the control (ADR-07).
+	if podSecurityLevel != controller.PodSecurityBaseline && podSecurityLevel != controller.PodSecurityRestricted {
+		setupLog.Error(nil, "--preview-pod-security must be baseline or restricted", "value", podSecurityLevel)
+		os.Exit(1)
+	}
 
 	// A bearer token must never travel over plain HTTP.
 	if metricsRequireRBAC && !secureMetrics {
@@ -128,6 +138,7 @@ func main() {
 		GitCredentialsDir:        gitCredentialsDir,
 		PreviewIngressNamespaces: splitNonEmpty(previewIngressNamespaces),
 		MaxConcurrentReconciles:  maxConcurrentReconciles,
+		PodSecurityLevel:         podSecurityLevel,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PreviewEnvironment")
 		os.Exit(1)

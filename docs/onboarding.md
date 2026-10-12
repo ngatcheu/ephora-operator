@@ -31,6 +31,7 @@ L'opérateur déploie **votre propre chart Helm**, depuis votre dépôt, à la r
 | ☐ | Uniquement des ressources **namespacées courantes** : Deployment, StatefulSet, Service, ConfigMap, Secret, Job, CronJob, HPA, PDB, PVC, ServiceAccount | Tout le reste est refusé (voir ci-dessous) |
 | ☐ | **Pas d'Ingress** | Pas d'exposition réseau en V1 : accès interne uniquement |
 | ☐ | **Pas de Role, RoleBinding, ClusterRole ni CRD** | Un chart ne peut pas se donner de droits |
+| ☐ | Pods conformes au niveau **Pod Security `baseline`** : ni `privileged`, ni `hostPath`, ni `hostNetwork`/`hostPID`, ni capacités ajoutées. Idéalement **`restricted`** : non-root, `seccompProfile: RuntimeDefault`, `allowPrivilegeEscalation: false`, capacités supprimées | Sinon les pods sont refusés ; les écarts à `restricted` vous sont signalés en avertissement |
 | ☐ | Tout est créé dans **le namespace de la release** (pas de `metadata.namespace` en dur) | Le chart n'a aucun droit hors de son namespace |
 | ☐ | Tient dans le **quota** : 2 CPU / 4 Gi demandés, 4 CPU / 8 Gi max, 20 pods | `ResourceQuota` du namespace |
 | ☐ | **Pas d'accès à Internet** au démarrage (téléchargement, API externe…) | La sortie vers Internet est bloquée |
@@ -197,7 +198,7 @@ La section `Conditions` (champ `Reason` et `Message`) et les `Events` indiquent 
 | `HelmDeployFailed` + `forbidden` | Le chart crée une ressource interdite (Ingress, RBAC, ressource cluster, autre namespace) | Retirer ou désactiver cette ressource pour la preview |
 | `HelmDeployFailed` + erreur de template | Value manquante ou erreur dans le chart | `helm template charts/app --set …` en local |
 | `NamespaceReconcileFailed` + `already belongs to` | Un autre `PreviewEnvironment` utilise déjà le même numéro de PR et la même app | Supprimer le doublon |
-| `Running` mais aucun pod | Quota dépassé | `kubectl get events -n preview-pr-…` → réduire les ressources demandées |
+| `Running` mais aucun pod | Quota dépassé, ou pod refusé par la Pod Security | `kubectl get events -n preview-pr-…` : `exceeded quota` → réduire les ressources ; `violates PodSecurity` → corriger le `securityContext` du chart (le message liste les points à corriger) |
 | Pods en `ImagePullBackOff` | Image absente ou tag faux | Vérifier que le build a poussé `IMAGE_TAG` |
 | Pods en `CrashLoopBackOff` | L'application ne démarre pas | `kubectl logs …` ; vérifier les dépendances et l'accès réseau |
 | Erreur à la création : `must be at most 53 characters` | Nom trop long | Raccourcir le nom dans le template |

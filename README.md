@@ -273,6 +273,7 @@ Groupe `ephora.io`, version `v1alpha1`, kind `PreviewEnvironment` (nom court `pe
 |---|---|
 | **Isolation réseau** | `NetworkPolicy` `ephora-default` dans chaque namespace : entrée depuis le namespace lui-même et depuis les seuls namespaces de `--preview-ingress-namespaces` (passerelle VPN, ingress interne ; tout le cluster si non configuré), sortie limitée au DNS et au cluster — pas d'Internet |
 | **Quotas** | `ResourceQuota` (2 CPU / 4 Gi demandés, 4 CPU / 8 Gi max, 20 pods) + `LimitRange` (valeurs par défaut par conteneur) |
+| **Pod Security** | Chaque namespace de preview impose le niveau `baseline` (`--preview-pod-security=restricted` pour durcir) : un chart ne peut lancer ni pod privilégié, ni pod accédant à l'hôte (`hostPath`, `hostNetwork`…). Les écarts au niveau `restricted` sont signalés aux équipes sans bloquer |
 | **Source des charts** | Liste blanche d'hôtes Git dans le schéma de la CRD |
 | **Injection d'arguments git** | Révision commençant par `-` refusée (CRD + code), `git checkout <rev> --` |
 | **Traversée de chemin** | `chartPath` sortant du dépôt cloné (`../..`) refusé |
@@ -315,6 +316,7 @@ Les erreurs sont aussi remontées en **événements Kubernetes** (`kubectl descr
 | `--viewer-groups` | *(vide)* | Groupes (ex. les développeurs) ayant accès en lecture + `port-forward` dans chaque namespace de preview |
 | `--viewer-cluster-role` | `ephora-operator-preview-viewer` | ClusterRole lié à ces groupes, namespace par namespace |
 | `--max-concurrent-reconciles` | `4` | Environnements traités en parallèle (clone + `helm install`) |
+| `--preview-pod-security` | `baseline` | Niveau Pod Security imposé dans les namespaces de preview : `baseline` ou `restricted` (`privileged` refusé) |
 | `--preview-ingress-namespaces` | *(vide : tous)* | Namespaces autorisés à joindre les environnements (passerelle VPN, ingress interne), en plus du trafic interne au namespace |
 | `--git-credentials-dir` | `/var/run/ephora/git` | Dossier du jeton Git optionnel (fichiers `password` et `username`) ; absent : clone anonyme |
 | `--health-probe-bind-address` | `:8081` | Sondes `/healthz` et `/readyz` |
@@ -460,7 +462,7 @@ hack/                    Scripts d'installation des outils
 ### Documentation d'architecture
 
 - [docs/dat-ephora-operator.md](docs/dat-ephora-operator.md) — Document d'architecture technique (composants, API, réconciliation, sécurité, exigences non fonctionnelles)
-- [docs/adrs-ephora-operator.md](docs/adrs-ephora-operator.md) — Décisions d'architecture (ADR-01 à ADR-06)
+- [docs/adrs-ephora-operator.md](docs/adrs-ephora-operator.md) — Décisions d'architecture (ADR-01 à ADR-07)
 
 ## Feuille de route
 

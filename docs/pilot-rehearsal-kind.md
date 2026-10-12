@@ -57,7 +57,7 @@ Capacité (mesurée séparément avec `hack/loadtest.sh` sur le même poste) : 5
 | Expiration par TTL | Nécessite au moins une heure | Tests envtest ; à constater pendant le pilote |
 | Métriques dans Prometheus | Pas de Prometheus sur kind | Accès HTTPS authentifié vérifié séparément (`401` sans jeton, métriques servies avec jeton) |
 | CI GitHub Actions de bout en bout | Les runners GitHub ne peuvent pas joindre un kind local | Commandes de la CI rejouées avec l'identité du compte CI (`--as`) |
-| Pod Security Admission | kind n'applique pas le profil CIS de RKE2 | **À vérifier en priorité sur RKE2** |
+| Pod Security Admission | kind n'applique pas le profil CIS de RKE2 | Traité ensuite par l'ADR-07 (niveau posé par namespace, test envtest) ; à confirmer sur RKE2 |
 | Dépôts privés | Dépôt de démonstration public | Tests unitaires (clone authentifié réel vers un serveur de test) |
 
 ## Constats et corrections
@@ -70,7 +70,7 @@ Capacité (mesurée séparément avec `hack/loadtest.sh` sur le même poste) : 5
 
 Reprendre les mêmes phases avec les valeurs du cluster cible, en commençant par :
 
-1. **Pod Security** : vérifier le niveau imposé (profil CIS → `restricted`). L'opérateur et l'application de démonstration sont conformes ; la plupart des charts applicatifs ne le sont pas. Décision à prendre (charts conformes ou namespaces de preview en `baseline`) et à consigner dans un ADR.
+1. **Pod Security** : décision prise depuis cette répétition ([ADR-07](adrs-ephora-operator.md)) — l'opérateur impose `baseline` sur chaque namespace de preview (`restricted` sur option) et signale les écarts à `restricted`. Sur RKE2 en profil CIS, vérifier que ce niveau posé par namespace est bien appliqué, et que les charts de l'équipe pilote passent (`kubectl get events … | grep PodSecurity`).
 2. **CNI** : confirmer que Canal (ou Cilium) applique les NetworkPolicies — rejouer la phase E.
 3. **Supervision** : avec Rancher Monitoring, activer le `ServiceMonitor` ([runbook §4](runbook.md#brancher-prometheus)).
 4. **CI réelle** : générer le kubeconfig du compte CI ([runbook §3](runbook.md#3-embarquer-une-équipe)) et le placer dans le secret `PREVIEW_KUBECONFIG` du dépôt pilote.

@@ -91,6 +91,11 @@ type PreviewEnvironmentReconciler struct {
 	// environments (besides same-namespace traffic). Empty: any namespace.
 	PreviewIngressNamespaces []string
 
+	// PodSecurityLevel is the Pod Security Admission level enforced in every
+	// preview namespace: PodSecurityBaseline (default) or PodSecurityRestricted
+	// (ADR-07).
+	PodSecurityLevel string
+
 	// MaxConcurrentReconciles is how many PreviewEnvironments are reconciled
 	// in parallel (DefaultMaxConcurrentReconciles when <= 0). The workqueue
 	// never processes the same object concurrently, and each reconcile only
@@ -105,7 +110,7 @@ type PreviewEnvironmentReconciler struct {
 // +kubebuilder:rbac:groups=ephora.io,resources=previewenvironments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ephora.io,resources=previewenvironments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ephora.io,resources=previewenvironments/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=resourcequotas;limitranges,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch

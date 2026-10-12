@@ -159,3 +159,40 @@ Le jeton est transmis à git sous forme d'en-tête `Authorization` via les varia
 - **Positif** : mise en place simple, surface d'attaque réduite, rotation sans interruption.
 - **Négatif** : le compte technique doit pouvoir lire les dépôts de toutes les équipes intégrées. Pas de rafraîchissement automatique des jetons à durée courte (jetons d'installation GitHub App, valables une heure).
 - **Révision prévue** : passer à des identifiants par équipe si le cloisonnement entre équipes devient une exigence.
+
+---
+
+## ADR-07 : Pod Security des namespaces de preview — `baseline` imposé, `restricted` signalé
+
+### Statut
+Accepté (v0.1.4)
+
+### Contexte
+Le chart déployé est une entrée non fiable (ADR-05). L'identité de déploiement limite **où** il peut agir, mais pas **ce que font ses pods** : sans contrôle, un chart peut lancer un pod privilégié, monter le système de fichiers du nœud (`hostPath`) ou utiliser son réseau (`hostNetwork`), et ainsi sortir de son namespace.
+
+Jusqu'ici, les namespaces de preview héritaient du niveau Pod Security par défaut du cluster, ce qui donnait deux situations insatisfaisantes :
+- cluster sans configuration : **aucun contrôle** ;
+- RKE2 en profil CIS : `restricted` imposé, et **la plupart des charts applicatifs refusés** (pods en root, sans seccomp…), ce qui bloque l'adoption.
+
+Options :
+1. `restricted` imposé par défaut : sécurité maximale, mais chaque chart doit être durci avant le pilote ;
+2. `baseline` imposé par défaut, `restricted` activable : bloque les vrais dangers (privilégié, accès à l'hôte) sans exiger de durcissement complet ;
+3. laisser le niveau du cluster : comportement implicite et variable selon les clusters.
+
+### Décision
+Option 2. L'opérateur pose sur chaque namespace de preview les labels Pod Security Admission :
+- `enforce` = niveau de `--preview-pod-security` : **`baseline` par défaut**, `restricted` sur option ;
+- `warn` et `audit` = **`restricted`** dans tous les cas : chaque écart au niveau le plus strict est signalé (avertissements à l'équipe, journal d'audit), sans bloquer.
+
+`privileged` n'est **pas** accepté par l'option : l'opérateur refuse de démarrer. Les labels sont rétablis à chaque réconciliation s'ils sont modifiés.
+
+### Justification
+- `baseline` couvre les scénarios d'évasion vers le nœud, le risque principal d'un chart malveillant ; `restricted` ajoute surtout de la défense en profondeur.
+- Le pilote n'est pas bloqué par des charts encore non durcis, et les avertissements `restricted` donnent aux équipes la liste exacte de ce qu'il leur reste à corriger.
+- Le comportement devient explicite et identique quel que soit le cluster.
+- Vérifié par un test envtest où l'admission Pod Security de l'API server rejette réellement les pods.
+
+### Conséquences
+- **Positif** : plus aucun pod privilégié ni accès à l'hôte possible depuis une preview ; trajectoire claire vers `restricted`.
+- **Négatif** : un pod refusé n'empêche pas le `helm install` de réussir — l'environnement est `Running` mais les pods manquent ; la cause apparaît dans les événements du namespace (`FailedCreate … violates PodSecurity`). L'opérateur a besoin du droit de mise à jour sur les namespaces.
+- **Révision prévue** : passer le défaut à `restricted` quand les charts intégrés le respectent (suivi via les avertissements).

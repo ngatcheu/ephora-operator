@@ -54,6 +54,16 @@ const (
 	// Keep in sync with the `bind` RBAC marker in the controller.
 	DefaultViewerClusterRole = "ephora-operator-preview-viewer"
 	viewerRoleBindingName    = "ephora-viewer"
+
+	// Pod Security Admission levels accepted for preview namespaces (ADR-07).
+	// "privileged" is deliberately not supported: the chart is untrusted
+	// input, and privileged pods could escape to the node.
+	PodSecurityBaseline   = "baseline"
+	PodSecurityRestricted = "restricted"
+	// DefaultPodSecurityLevel blocks privileged pods and host access without
+	// requiring charts to be fully hardened; "restricted" is opt-in.
+	DefaultPodSecurityLevel = PodSecurityBaseline
+	podSecurityLabelPrefix  = "pod-security.kubernetes.io/"
 )
 
 // namespaceName derives the dedicated namespace for a PreviewEnvironment per
@@ -72,15 +82,20 @@ func releaseName(pe *ephoraiov1alpha1.PreviewEnvironment) string {
 }
 
 // reconcileNamespace ensures the dedicated namespace for pe exists, labeled
-// for ownership/orphan-detection. Idempotent.
+// for ownership/orphan-detection and with its Pod Security level (ADR-07).
+// Idempotent.
 func (r *PreviewEnvironmentReconciler) reconcileNamespace(ctx context.Context, pe *ephoraiov1alpha1.PreviewEnvironment, name string) error {
 	ns := &corev1.Namespace{}
 	err := r.Get(ctx, types.NamespacedName{Name: name}, ns)
 	if apierrors.IsNotFound(err) {
+		labels := ownerLabels(pe)
+		for k, v := range r.podSecurityLabels() {
+			labels[k] = v
+		}
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   name,
-				Labels: ownerLabels(pe),
+				Labels: labels,
 			},
 		}
 		return r.Create(ctx, ns)
@@ -101,7 +116,39 @@ func (r *PreviewEnvironmentReconciler) reconcileNamespace(ctx context.Context, p
 		return fmt.Errorf("namespace %s already belongs to PreviewEnvironment %s/%s",
 			name, ns.Labels[LabelOwnerNamespace], ns.Labels[LabelOwner])
 	}
+
+	// Restore the Pod Security labels if they were edited by hand or if
+	// --preview-pod-security changed.
+	changed := false
+	for k, v := range r.podSecurityLabels() {
+		if ns.Labels[k] != v {
+			ns.Labels[k] = v
+			changed = true
+		}
+	}
+	if changed {
+		return r.Update(ctx, ns)
+	}
 	return nil
+}
+
+// podSecurityLabels returns the Pod Security Admission labels applied to
+// every preview namespace (ADR-07): the configured level is enforced, while
+// "restricted" is always reported as warnings/audit so teams see what their
+// chart would still need to fix to pass the strictest level.
+func (r *PreviewEnvironmentReconciler) podSecurityLabels() map[string]string {
+	level := r.PodSecurityLevel
+	if level == "" {
+		level = DefaultPodSecurityLevel
+	}
+	return map[string]string{
+		podSecurityLabelPrefix + "enforce":         level,
+		podSecurityLabelPrefix + "enforce-version": "latest",
+		podSecurityLabelPrefix + "warn":            PodSecurityRestricted,
+		podSecurityLabelPrefix + "warn-version":    "latest",
+		podSecurityLabelPrefix + "audit":           PodSecurityRestricted,
+		podSecurityLabelPrefix + "audit-version":   "latest",
+	}
 }
 
 // ownsNamespace reports whether ns was created for pe (owner labels match).
