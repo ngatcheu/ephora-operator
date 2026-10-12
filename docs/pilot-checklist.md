@@ -1,7 +1,7 @@
 # Checklist du pilote — ephora-operator
 
 Pour l'**équipe plateforme** qui met l'opérateur en service sur un vrai cluster et embarque une première équipe.
-Références : [runbook](runbook.md) · [guide d'onboarding](onboarding.md) · [DAT](dat-ephora-operator.md).
+Références : [runbook](runbook.md) · [guide d'onboarding](onboarding.md) · [DAT](dat-ephora-operator.md) · [compte rendu de la répétition sur kind](pilot-rehearsal-kind.md).
 
 ---
 
