@@ -494,6 +494,7 @@ hack/                    Scripts d'installation des outils
 | [Guide d'onboarding](docs/onboarding.md) | Intégrer un dépôt applicatif (pour les équipes) |
 | [Runbook d'exploitation](docs/runbook.md) | Installer, surveiller et dépanner l'opérateur (pour l'équipe plateforme) |
 | [Checklist du pilote](docs/pilot-checklist.md) | Mise en service sur un vrai cluster avec l'overlay `config/prod` |
+| [Répétition du pilote sur kind](docs/pilot-rehearsal-kind.md) | Compte rendu : contrôles de sécurité, test de bout en bout, résultats |
 | [DAT](docs/dat-ephora-operator.md) · [ADRs](docs/adrs-ephora-operator.md) | Architecture et décisions |
 | [helm/examples](https://github.com/helm/examples) | Chart `hello-world` utilisé pour les tests sur kind |
 

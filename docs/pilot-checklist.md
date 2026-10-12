@@ -1,7 +1,7 @@
 # Checklist du pilote — ephora-operator
 
 Pour l'**équipe plateforme** qui met l'opérateur en service sur un vrai cluster et embarque une première équipe.
-Références : [runbook](runbook.md) · [guide d'onboarding](onboarding.md) · [DAT](dat-ephora-operator.md).
+Références : [runbook](runbook.md) · [guide d'onboarding](onboarding.md) · [DAT](dat-ephora-operator.md) · [compte rendu de la répétition sur kind](pilot-rehearsal-kind.md).
 
 ---
 
@@ -40,7 +40,7 @@ Toutes les valeurs à adapter sont marquées `CHANGE-ME`.
 
 | Fichier | Valeur | Exemple |
 |---|---|---|
-| `config/prod/kustomization.yaml` | Version de la release | `v0.1.2` |
+| `config/prod/kustomization.yaml` | Version de la release | `v0.1.3` |
 | | Hôte Git autorisé (liste blanche) | `^https://github\.acme\.com/.+$` |
 | | `--preview-ingress-namespaces` | `vpn-gateway,ingress-internal` |
 | | `--viewer-groups` | `dev-checkout,dev-payment` |
