@@ -160,3 +160,45 @@ jobs:
           EOF
           gh release create "$TAG" dist/install.yaml sbom.spdx.json \
             --title "$TAG" --notes-file notes.md --generate-notes --verify-tag
+
+  # Keeps the production/pilot overlay pinned to the latest signed release:
+  # opens a PR instead of pushing to main, so the change is reviewed.
+  # Requires: Settings > Actions > General > "Allow GitHub Actions to create
+  # and approve pull requests". PRs opened with GITHUB_TOKEN don't trigger the
+  # CI workflow: close and reopen the PR to run it if required checks apply.
+  pin-prod-overlay:
+    name: Pin config/prod to this release
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # push the branch
+      pull-requests: write  # open the PR
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Open a PR pinning config/prod
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          sed -i -E 's#(/releases/download/)v[0-9]+\.[0-9]+\.[0-9]+(/install\.yaml)#\1'"${TAG}"'\2#' \
+            config/prod/kustomization.yaml
+          sed -i -E 's#(Version de la release [|] `)v[0-9]+\.[0-9]+\.[0-9]+(`)#\1'"${TAG}"'\2#' \
+            docs/pilot-checklist.md
+          if git diff --quiet; then
+            echo "config/prod already pinned to ${TAG}"
+            exit 0
+          fi
+          branch="chore/prod-overlay-${TAG}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit -am "chore(prod): pin overlay to release ${TAG}"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "chore(prod): pin overlay to release ${TAG}" \
+            --body "Pins \`config/prod\` to the signed release [${TAG}](https://github.com/${{ github.repository }}/releases/tag/${TAG}).
+
+          Before merging: read the release notes and verify the image signature (README, *Depuis une release*)."
