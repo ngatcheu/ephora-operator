@@ -199,6 +199,29 @@ else
     log absent "docker — activez l'intégration WSL de Docker Desktop (Settings > Resources > WSL integration)"
 fi
 
+# --- buildx (plugin Docker, nécessaire aux Dockerfiles BuildKit) --------------
+# Installé dans ~/.docker/cli-plugins, que Docker consulte EN PRIORITÉ : sous
+# WSL, le lien fourni par Docker Desktop (/usr/local/lib/docker/cli-plugins)
+# devient un lien cassé après un redémarrage de Docker Desktop, et `docker
+# build` retombe alors sur l'ancien moteur, incompatible avec $BUILDPLATFORM.
+
+BUILDX_PLUGIN="${HOME}/.docker/cli-plugins/docker-buildx"
+if command -v docker >/dev/null 2>&1; then
+    if ! ${UPGRADE} && [ -x "${BUILDX_PLUGIN}" ]; then
+        log ok buildx
+    else
+        version="${BUILDX_VERSION:-$(gh_latest docker/buildx)}"
+        asset="buildx-${version}.${OS}-${ARCH}"
+        log install "buildx ${version} -> ${BUILDX_PLUGIN}"
+        url="https://github.com/docker/buildx/releases/download/${version}"
+        curl -fsSLo "${TMP}/${asset}" "${url}/${asset}"
+        verify_sha256 "${TMP}/${asset}" \
+            "$(curl -fsSL "${url}/checksums.txt" | awk -v a="${asset}" '$2 == a || $2 == "*"a {print $1}')"
+        mkdir -p "$(dirname "${BUILDX_PLUGIN}")"
+        install -m 0755 "${TMP}/${asset}" "${BUILDX_PLUGIN}"
+    fi
+fi
+
 # --- PATH ----------------------------------------------------------------
 
 path_line='export PATH="$HOME/.local/go/bin:$HOME/go/bin:$HOME/.local/bin:$PATH"'
@@ -216,6 +239,7 @@ for tool in go kubectl helm kind kustomize kubebuilder operator-sdk opm golangci
     printf '  %-15s %s\n' "${tool}" "${path:-ABSENT}"
 done
 go version
+command -v docker >/dev/null 2>&1 && docker buildx version 2>/dev/null | sed 's/^/  buildx          /'
 
 echo
 echo "Terminé. Rechargez le shell : source ~/.bashrc"
