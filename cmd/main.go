@@ -50,6 +50,7 @@ func main() {
 	var viewerGroups string
 	var gitCredentialsDir string
 	var previewIngressNamespaces string
+	var maxConcurrentReconciles int
 	var secureMetrics bool
 	var metricsRequireRBAC bool
 
@@ -81,6 +82,8 @@ func main() {
 	flag.StringVar(&previewIngressNamespaces, "preview-ingress-namespaces", "",
 		"Comma-separated namespaces allowed to reach preview environments (e.g. the VPN gateway or "+
 			"internal ingress controller namespace). Empty: any in-cluster namespace.")
+	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", controller.DefaultMaxConcurrentReconciles,
+		"How many PreviewEnvironments are reconciled in parallel (git clone + helm install each).")
 
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
@@ -124,6 +127,7 @@ func main() {
 		ViewerGroups:             splitNonEmpty(viewerGroups),
 		GitCredentialsDir:        gitCredentialsDir,
 		PreviewIngressNamespaces: splitNonEmpty(previewIngressNamespaces),
+		MaxConcurrentReconciles:  maxConcurrentReconciles,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PreviewEnvironment")
 		os.Exit(1)

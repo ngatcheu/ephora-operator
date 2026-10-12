@@ -427,6 +427,7 @@ Modifier les `args` dans `config/manager/manager.yaml`, puis `make deploy`.
 | `--deployer-cluster-role` | `ephora-operator-preview-deployer` |
 | `--viewer-groups` | *(vide : aucun accès développeur)* — ex. `--viewer-groups=dev-checkout,dev-payment` |
 | `--viewer-cluster-role` | `ephora-operator-preview-viewer` |
+| `--max-concurrent-reconciles` | `4` — environnements traités en parallèle. Augmenter si les rafales de PR sont fréquentes ; surveiller alors la mémoire du pod et le volume `/tmp` (1 Gio), qui accueille un clone par traitement en cours |
 | `--preview-ingress-namespaces` | *(vide : tous les namespaces)* — ex. `--preview-ingress-namespaces=vpn-gateway,ingress-internal`. **À configurer en production.** Le `kubectl port-forward` passe par le kubelet et n'est pas concerné |
 | `--git-credentials-dir` | `/var/run/ephora/git` |
 | `--metrics-secure`, `--metrics-require-rbac` | activés par `make deploy` (ne pas les retirer) |

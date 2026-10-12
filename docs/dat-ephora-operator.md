@@ -137,7 +137,7 @@ status:
 5. **Détection d'orphelins** : au démarrage puis toutes les 30 min, les namespaces gérés sans `PreviewEnvironment` associé sont supprimés.
 6. **Correction de dérive** : un environnement `Running` est réconcilié au moins toutes les 10 min ; une NetworkPolicy, un quota ou un RoleBinding modifié ou supprimé à la main est rétabli.
 
-**Déclenchement** : seuls les changements du `spec` et le début d'une suppression déclenchent une réconciliation (les écritures de `status` n'en déclenchent pas). Les erreurs sont réessayées avec un délai exponentiel (jusqu'à environ 16 min).
+**Déclenchement** : seuls les changements du `spec` et le début d'une suppression déclenchent une réconciliation (les écritures de `status` n'en déclenchent pas). Les erreurs sont réessayées avec un délai exponentiel (jusqu'à environ 16 min). Jusqu'à `--max-concurrent-reconciles` environnements (4 par défaut) sont traités en parallèle ; un même environnement ne l'est jamais deux fois simultanément.
 
 ## 5. Sécurité (angle DevSecOps)
 
@@ -163,7 +163,7 @@ status:
 | **Délai de provisioning** | < 3 minutes entre application de la CRD et phase `Running` | 5,7 s (chart `hello-world`) |
 | **Fiabilité du nettoyage** | 0 namespace orphelin après 1h au-delà du TTL | Finalizer + délai maximal + balayage (section 4) |
 | **Observabilité** | Métriques Prometheus : `preview_environments_active`, `preview_environment_provisioning_duration_seconds`, `preview_environment_cleanup_total{reason}` | Exposées et vérifiées en cluster |
-| **Scalabilité** | Au moins 50 environnements actifs simultanés sans dégradation | 50 créés d'un coup : tous `Running` en 90 s, p95 83 s, nettoyage complet en 30 s, mémoire de l'opérateur 76 Mio au pic (`hack/loadtest.sh`, kind, sans pods). Traitement séquentiel (~1,8 s par environnement) : le délai croît linéairement avec la taille d'une rafale |
+| **Scalabilité** | Au moins 50 environnements actifs simultanés sans dégradation | 50 créés d'un coup (`hack/loadtest.sh`, kind, sans pods) — avec 4 workers (défaut) : tous `Running` en 41 s, **p95 38 s**, nettoyage complet en 26 s, mémoire 95 Mio au pic. Avec 1 worker : 90 s, p95 83 s, 76 Mio. Au-delà de 4 workers, la limite devient l'environnement (clones réseau, API server) plutôt que l'opérateur |
 
 ## 7. Risques identifiés
 
