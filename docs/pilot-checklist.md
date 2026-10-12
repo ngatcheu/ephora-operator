@@ -40,7 +40,7 @@ Toutes les valeurs à adapter sont marquées `CHANGE-ME`.
 
 | Fichier | Valeur | Exemple |
 |---|---|---|
-| `config/prod/kustomization.yaml` | Version de la release | `v0.1.2` |
+| `config/prod/kustomization.yaml` | Version de la release | `v0.1.3` |
 | | Hôte Git autorisé (liste blanche) | `^https://github\.acme\.com/.+$` |
 | | `--preview-ingress-namespaces` | `vpn-gateway,ingress-internal` |
 | | `--viewer-groups` | `dev-checkout,dev-payment` |

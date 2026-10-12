@@ -166,6 +166,19 @@ if needs_install opm; then
     install -m 0755 "${TMP}/opm" "${BIN_DIR}/opm"
 fi
 
+# --- cosign (vérification des signatures d'images) ---------------------------
+
+if needs_install cosign; then
+    version="${COSIGN_VERSION:-$(gh_latest sigstore/cosign)}"
+    asset="cosign-${OS}-${ARCH}"
+    url="https://github.com/sigstore/cosign/releases/download/${version}"
+    log install "cosign ${version}"
+    curl -fsSLo "${TMP}/${asset}" "${url}/${asset}"
+    verify_sha256 "${TMP}/${asset}" \
+        "$(curl -fsSL "${url}/cosign_checksums.txt" | awk -v a="${asset}" '$2 == a {print $1}')"
+    install -m 0755 "${TMP}/${asset}" "${BIN_DIR}/cosign"
+fi
+
 # --- golangci-lint (lint Go) ------------------------------------------------
 
 if needs_install golangci-lint; then
@@ -234,7 +247,7 @@ fi
 
 echo
 echo "Versions disponibles :"
-for tool in go kubectl helm kind kustomize kubebuilder operator-sdk opm golangci-lint controller-gen setup-envtest; do
+for tool in go kubectl helm kind kustomize kubebuilder operator-sdk opm cosign golangci-lint controller-gen setup-envtest; do
     path="$(command -v "${tool}" 2>/dev/null || true)"
     printf '  %-15s %s\n' "${tool}" "${path:-ABSENT}"
 done
