@@ -1,6 +1,6 @@
 # Document d'Architecture Technique (DAT) — ephora-operator
 
-> Version du document : **v0.1.x** (aligné sur les releases v0.1). Décisions d'architecture : [ADR-01 à ADR-06](adrs-ephora-operator.md).
+> Version du document : **v0.1.x** (aligné sur les releases v0.1). Décisions d'architecture : [ADR-01 à ADR-07](adrs-ephora-operator.md).
 
 ## 1. Contexte et objectifs
 
@@ -127,7 +127,7 @@ status:
 1. **Création** : ajout du finalizer `ephora.io/preview-cleanup`, puis dans le même passage :
    1. calcul de `status.expiresAt`, **avant** toute étape susceptible d'échouer (un environnement en échec expire quand même) ;
    2. création du namespace `preview-pr-<n>-<app>` avec les labels de propriété (`ephora.io/managed-by`, `ephora.io/owner`, `ephora.io/owner-namespace`). Un namespace existant qui appartient à un autre `PreviewEnvironment` est **refusé** (`NamespaceReconcileFailed`) ;
-   3. `NetworkPolicy` default-deny, `ResourceQuota` et `LimitRange` ;
+   3. `NetworkPolicy` default-deny, `ResourceQuota`, `LimitRange`, et labels Pod Security (`enforce` = `baseline` par défaut, `warn`/`audit` = `restricted`, cf. ADR-07) ;
    4. identité de déploiement `ephora-deployer` (ServiceAccount + RoleBinding) et, si configuré, RoleBinding de lecture pour les développeurs ;
    5. clone du dépôt à la révision (jeton optionnel, cf. ADR-06 ; liens symboliques désactivés), chargement du chart, puis `helm install` **sous l'identité `ephora-deployer`** ;
    6. phase `Provisioning` puis `Running`.
@@ -149,6 +149,7 @@ status:
 | **Accès développeurs** | Lecture + `port-forward` par namespace (`--viewer-groups`), sans Secrets ni `exec` |
 | **Isolation réseau** | `NetworkPolicy` default-deny ; entrée depuis le namespace et depuis `--preview-ingress-namespaces` (passerelle interne) ; sortie limitée au DNS et au cluster (cf. ADR-03) |
 | **Quotas** | `ResourceQuota` (2 CPU / 4 Gi demandés, 4 CPU / 8 Gi max, 20 pods) et `LimitRange` par défaut |
+| **Pod Security** | Niveau `baseline` imposé (`restricted` sur option) : ni pod privilégié, ni accès à l'hôte ; écarts à `restricted` signalés (ADR-07) |
 | **Source des charts** | Liste blanche d'hôtes Git dans le schéma ; révision sans `-` initial ; `chartPath` confiné au dépôt ; liens symboliques non suivis (`core.symlinks=false`) |
 | **Identifiant Git** | Jeton en lecture seule monté en fichier, transmis en en-tête limité à l'hôte du dépôt, jamais dans les logs ni le `status` (ADR-06) |
 | **Image et pod** | Utilisateur non-root numérique, capacités supprimées, système de fichiers en lecture seule, seccomp `RuntimeDefault` |
@@ -189,7 +190,7 @@ status:
 
 ## 9. Références
 
-- [ADRs](adrs-ephora-operator.md) : ADR-01 à ADR-06
+- [ADRs](adrs-ephora-operator.md) : ADR-01 à ADR-07
 - [Guide d'onboarding](onboarding.md) : intégration d'un dépôt applicatif
 - [Runbook d'exploitation](runbook.md) : installation, surveillance, incidents
 - [README](../README.md) : démarrage rapide, référence d'API, développement

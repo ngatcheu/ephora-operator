@@ -298,6 +298,64 @@ func TestNetworkPolicyIngressRestriction(t *testing.T) {
 	}
 }
 
+// Preview namespaces get an explicit Pod Security level (ADR-07): baseline by
+// default (privileged pods rejected by the API server's PodSecurity
+// admission), restricted on demand; labels follow configuration changes.
+func TestPreviewNamespacePodSecurity(t *testing.T) {
+	requireEnvtest(t)
+	ctx := context.Background()
+	pe := newTestPE(t, ctx, "pr-108-psa", 108, "psa")
+	key := client.ObjectKeyFromObject(pe)
+	nsName := "preview-pr-108-psa"
+	r := newTestReconciler(t)
+
+	pod := func(name string, sc *corev1.SecurityContext) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: nsName},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Name: "c", Image: "busybox", SecurityContext: sc,
+			}}},
+		}
+	}
+	privileged := true
+	labelsOf := func() map[string]string {
+		t.Helper()
+		ns := &corev1.Namespace{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: nsName}, ns); err != nil {
+			t.Fatalf("getting namespace: %v", err)
+		}
+		return ns.Labels
+	}
+
+	// Default: baseline enforced, restricted reported.
+	_ = reconcileOnce(ctx, r, key)
+	labels := labelsOf()
+	if labels["pod-security.kubernetes.io/enforce"] != PodSecurityBaseline ||
+		labels["pod-security.kubernetes.io/warn"] != PodSecurityRestricted {
+		t.Fatalf("pod security labels = %v, want enforce=baseline warn=restricted", labels)
+	}
+	// "violates PodSecurity": a quota rejection would also be Forbidden.
+	rejectedByPSA := func(err error) bool {
+		return apierrors.IsForbidden(err) && strings.Contains(err.Error(), "violates PodSecurity")
+	}
+	if err := k8sClient.Create(ctx, pod("privileged", &corev1.SecurityContext{Privileged: &privileged})); !rejectedByPSA(err) {
+		t.Errorf("privileged pod under baseline: error = %v, want a PodSecurity rejection", err)
+	}
+	if err := k8sClient.Create(ctx, pod("plain", nil)); err != nil {
+		t.Errorf("ordinary pod rejected under baseline: %v", err)
+	}
+
+	// Restricted: an ordinary (root-capable, no seccomp) pod is now rejected.
+	r.PodSecurityLevel = PodSecurityRestricted
+	_ = reconcileOnce(ctx, r, key)
+	if got := labelsOf()["pod-security.kubernetes.io/enforce"]; got != PodSecurityRestricted {
+		t.Fatalf("enforce label = %q after switching to restricted", got)
+	}
+	if err := k8sClient.Create(ctx, pod("plain-2", nil)); !rejectedByPSA(err) {
+		t.Errorf("ordinary pod under restricted: error = %v, want a PodSecurity rejection", err)
+	}
+}
+
 // TestCRDValidation guards the schema-level security/cost controls from
 // CLAUDE.md: TTL bound, repo allow-list, revision format, immutable prNumber,
 // and the Helm release name length limit.
