@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # NOT distroless/scratch: the reconciler shells out to `git` to fetch each
 # PreviewEnvironment's application chart dynamically per spec.source (DAT §3,
 # internal/controller/helmchart.go) — a static/no-shell base can't do that.
-FROM alpine:3.22
+FROM alpine:3.24
 RUN apk add --no-cache git ca-certificates \
     && addgroup -S -g 65532 ephora \
     && adduser -S -u 65532 -G ephora ephora
