@@ -196,3 +196,36 @@ Option 2. L'opérateur pose sur chaque namespace de preview les labels Pod Secur
 - **Positif** : plus aucun pod privilégié ni accès à l'hôte possible depuis une preview ; trajectoire claire vers `restricted`.
 - **Négatif** : un pod refusé n'empêche pas le `helm install` de réussir — l'environnement est `Running` mais les pods manquent ; la cause apparaît dans les événements du namespace (`FailedCreate … violates PodSecurity`). L'opérateur a besoin du droit de mise à jour sur les namespaces.
 - **Révision prévue** : passer le défaut à `restricted` quand les charts intégrés le respectent (suivi via les avertissements).
+
+---
+
+## ADR-08 : Statut de l'environnement sur la Pull Request — commentaire publié par la CI
+
+### Statut
+Accepté (v0.1.5) — fonctionnalité V2, optionnelle (DAT §8)
+
+### Contexte
+Le développeur doit aller chercher l'état de son environnement avec `kubectl`. On veut l'afficher directement sur la Pull Request : prêt, en échec (avec la raison) ou supprimé.
+
+Deux options :
+1. **la CI de l'application** publie le commentaire, avec le `GITHUB_TOKEN` de son workflow ;
+2. **l'opérateur** publie le commentaire, avec un jeton GitHub stocké dans le cluster.
+
+### Décision
+Option 1. Une action GitHub réutilisable, `ngatcheu/ephora-operator/.github/actions/preview-comment`, appelée par le workflow de l'application après le `kubectl apply` :
+- elle attend que la condition `Ready` corresponde **à la génération qui vient d'être appliquée** (`observedGeneration`, renseignée par l'opérateur), pour ne jamais rapporter l'état d'un commit précédent ;
+- elle crée ou **met à jour un commentaire unique** par environnement (repéré par un marqueur caché), au lieu d'en ajouter un à chaque push ;
+- le job échoue si l'environnement est en échec (désactivable).
+
+Le contenu est produit par `hack/preview-status.sh`, exécutable en local.
+
+### Justification
+- **Moindre privilège** : le `GITHUB_TOKEN` est éphémère et limité au dépôt de l'application. L'option 2 imposerait un jeton capable d'écrire sur les PR de tous les dépôts intégrés, stocké dans le cluster : une cible de grande valeur.
+- **Aucun nouveau flux réseau** depuis l'opérateur vers GitHub, ni dépendance de l'opérateur à une forge particulière.
+- **Cohérent avec l'ADR-02** : la CI pilote l'environnement, l'opérateur reste agnostique.
+- **Optionnel** par construction : une équipe qui n'ajoute pas l'étape n'a pas de commentaire, sans autre effet.
+
+### Conséquences
+- **Positif** : retour immédiat dans la PR, sans droit supplémentaire ni secret dans le cluster ; la sortie est aussi copiée dans le résumé du job GitHub Actions.
+- **Négatif** : le commentaire reflète l'état **au moment du déploiement**. Une expiration ou un échec survenus plus tard ne sont pas répercutés (la date d'expiration est affichée). Le job de CI attend la fin du déploiement (10 min maximum par défaut).
+- **Révision prévue** : si le suivi en continu devient nécessaire, envisager une GitHub App à permissions minimales plutôt qu'un jeton personnel.

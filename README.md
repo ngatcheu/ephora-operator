@@ -462,7 +462,7 @@ hack/                    Scripts d'installation des outils
 ### Documentation d'architecture
 
 - [docs/dat-ephora-operator.md](docs/dat-ephora-operator.md) — Document d'architecture technique (composants, API, réconciliation, sécurité, exigences non fonctionnelles)
-- [docs/adrs-ephora-operator.md](docs/adrs-ephora-operator.md) — Décisions d'architecture (ADR-01 à ADR-07)
+- [docs/adrs-ephora-operator.md](docs/adrs-ephora-operator.md) — Décisions d'architecture (ADR-01 à ADR-08)
 
 ## Feuille de route
 
@@ -480,7 +480,7 @@ hack/                    Scripts d'installation des outils
 **V2** (derrière un flag, hors du chemin V1 par défaut)
 
 - [ ] Ingress dynamique + cert-manager (ADR-03)
-- [ ] Commentaire automatique sur la PR avec l'état de l'environnement
+- [x] Commentaire automatique sur la PR avec l'état de l'environnement (action GitHub `preview-comment`, ADR-08)
 - [ ] Tableau de bord FinOps
 
 ## Liens utiles
