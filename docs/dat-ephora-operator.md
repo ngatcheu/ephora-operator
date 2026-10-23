@@ -1,6 +1,6 @@
 # Document d'Architecture Technique (DAT) — ephora-operator
 
-> Version du document : **v0.1.x** (aligné sur les releases v0.1). Décisions d'architecture : [ADR-01 à ADR-07](adrs-ephora-operator.md).
+> Version du document : **v0.1.x** (aligné sur les releases v0.1). Décisions d'architecture : [ADR-01 à ADR-08](adrs-ephora-operator.md).
 
 ## 1. Contexte et objectifs
 
@@ -183,14 +183,14 @@ status:
 
 À activer derrière une option, sans modifier le comportement V1 par défaut :
 - Exposition via Ingress dynamique + cert-manager (révision de l'ADR-03).
-- Commentaire automatique sur la PR GitHub avec le lien et le statut de l'environnement.
+- ~~Commentaire automatique sur la PR GitHub avec le statut de l'environnement~~ — livré en v0.1.5 (action `preview-comment`, ADR-08) ; le lien d'accès suivra l'URL publique.
 - Dashboard FinOps agrégeant les métriques d'usage cumulé des environnements éphémères.
 - Identifiants Git par équipe (révision de l'ADR-06).
 - Métrique par phase (environnements `Failed`).
 
 ## 9. Références
 
-- [ADRs](adrs-ephora-operator.md) : ADR-01 à ADR-07
+- [ADRs](adrs-ephora-operator.md) : ADR-01 à ADR-08
 - [Guide d'onboarding](onboarding.md) : intégration d'un dépôt applicatif
 - [Runbook d'exploitation](runbook.md) : installation, surveillance, incidents
 - [README](../README.md) : démarrage rapide, référence d'API, développement

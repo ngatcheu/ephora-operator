@@ -1,0 +1,73 @@
+name: ephora-operator preview comment
+description: >
+  Waits for the preview environment of the current Pull Request, then posts or
+  updates a single PR comment with its status (ready, failed with the reason,
+  or deleted). See docs/adrs-ephora-operator.md, ADR-08.
+
+inputs:
+  name:
+    description: PreviewEnvironment name (e.g. pr-42-demo-app)
+    required: true
+  namespace:
+    description: Management namespace holding the PreviewEnvironment objects
+    default: ephora-previews
+  mode:
+    description: "deploy: wait for the result and report it; deleted: the PR was closed"
+    default: deploy
+  timeout:
+    description: Seconds to wait for the environment before reporting it as still provisioning
+    default: "600"
+  github-token:
+    description: Token used to comment (needs pull-requests write on this repository)
+    default: ${{ github.token }}
+  fail-on-error:
+    description: Fail the job when the environment is not ready
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Wait for the environment and write the comment
+      id: render
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+        NAMESPACE: ${{ inputs.namespace }}
+        MODE: ${{ inputs.mode }}
+        TIMEOUT: ${{ inputs.timeout }}
+      run: |
+        set +e
+        bash "${GITHUB_ACTION_PATH}/../../../hack/preview-status.sh" > "${RUNNER_TEMP}/ephora-comment.md"
+        echo "status=$?" >> "${GITHUB_OUTPUT}"
+        cat "${RUNNER_TEMP}/ephora-comment.md" >> "${GITHUB_STEP_SUMMARY}"
+
+    # One comment per environment, edited in place (found by its hidden
+    # marker) instead of a new comment on every push.
+    - name: Post or update the PR comment
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+        MARKER: "<!-- ephora-preview:${{ inputs.name }} -->"
+      run: |
+        if [ -z "${PR}" ]; then
+          echo "::notice::Not a pull_request event: no comment posted."
+          exit 0
+        fi
+        id=$(gh api --paginate "repos/${REPO}/issues/${PR}/comments" \
+          --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" | head -n1)
+        if [ -n "${id}" ]; then
+          gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -F body=@"${RUNNER_TEMP}/ephora-comment.md" > /dev/null
+        else
+          gh api -X POST "repos/${REPO}/issues/${PR}/comments" -F body=@"${RUNNER_TEMP}/ephora-comment.md" > /dev/null
+        fi
+
+    - name: Fail the job if the environment is not ready
+      if: inputs.fail-on-error == 'true' && steps.render.outputs.status != '0'
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+      run: |
+        echo "::error::Preview environment ${NAME} is not ready (see the PR comment)."
+        exit 1

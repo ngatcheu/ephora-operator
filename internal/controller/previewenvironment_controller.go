@@ -385,6 +385,9 @@ func (r *PreviewEnvironmentReconciler) setPhase(ctx context.Context, pe *ephorai
 		Status:  readyStatus,
 		Reason:  reason,
 		Message: message,
+		// Lets clients (e.g. the CI posting the PR comment) tell whether this
+		// condition reflects the spec they just applied or a previous one.
+		ObservedGeneration: pe.Generation,
 	})
 	if err := r.updateStatus(ctx, pe); err != nil {
 		return err

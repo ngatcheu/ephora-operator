@@ -101,6 +101,10 @@ func TestReconcileProvisionsGuardrailsAndReportsFailure(t *testing.T) {
 	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "HelmDeployFailed" {
 		t.Errorf("Ready condition = %+v, want False/HelmDeployFailed", ready)
 	}
+	// The CI relies on it to know the condition reflects the spec it applied.
+	if ready != nil && ready.ObservedGeneration != got.Generation {
+		t.Errorf("Ready.observedGeneration = %d, want metadata.generation %d", ready.ObservedGeneration, got.Generation)
+	}
 	if got.Status.Namespace != nsName {
 		t.Errorf("status.namespace = %q, want %q", got.Status.Namespace, nsName)
 	}

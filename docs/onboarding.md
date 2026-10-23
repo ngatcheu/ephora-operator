@@ -130,6 +130,33 @@ jobs:
 
 Ouvrez une PR de test : l'environnement doit apparaître en quelques secondes.
 
+### Optionnel — statut de l'environnement en commentaire de la PR
+
+Ajoutez ces deux étapes pour qu'un **commentaire unique**, mis à jour à chaque push, indique sur la PR si l'environnement est prêt (avec la commande d'accès), en échec (avec la raison) ou supprimé :
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write   # au niveau du workflow : autorise le commentaire
+
+# … dans les steps du job preview :
+
+      - name: Statut de l'environnement sur la PR
+        if: github.event.action != 'closed'
+        uses: ngatcheu/ephora-operator/.github/actions/preview-comment@v0.1.5
+        with:
+          name: pr-${{ github.event.pull_request.number }}-checkout-api
+
+      - name: Suppression signalée sur la PR
+        if: github.event.action == 'closed'
+        uses: ngatcheu/ephora-operator/.github/actions/preview-comment@v0.1.5
+        with:
+          name: pr-${{ github.event.pull_request.number }}-checkout-api
+          mode: deleted
+```
+
+L'action attend le résultat du déploiement (10 min maximum, option `timeout`) et fait échouer le job si l'environnement est en échec (option `fail-on-error: "false"` pour l'éviter). Elle n'utilise que le `GITHUB_TOKEN` du workflow : aucun droit supplémentaire n'est nécessaire.
+
 ---
 
 ## Étape 5 — Suivre et utiliser l'environnement
