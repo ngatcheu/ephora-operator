@@ -8,7 +8,7 @@ Guidance for Claude (Code or chat) working in this repository.
 
 Full context:
 - `docs/dat-ephora-operator.md` — technical architecture document (components, CRD spec, reconciliation loop, security model, NFRs)
-- `docs/adrs-ephora-operator.md` — architecture decision records (ADR-01 to ADR-08)
+- `docs/adrs-ephora-operator.md` — architecture decision records (ADR-01 to ADR-09)
 
 Read both before proposing structural changes — several choices below are deliberate decisions, not defaults to reconsider casually.
 

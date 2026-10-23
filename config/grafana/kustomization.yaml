@@ -1,0 +1,20 @@
+# FinOps dashboard for Grafana (ADR-09), delivered as a ConfigMap picked up by
+# the Grafana dashboard sidecar (kube-prometheus-stack, Rancher Monitoring).
+#
+#   kustomize build config/grafana | kubectl apply -n <dashboards-namespace> -f -
+#
+# Namespace: where your Grafana sidecar looks for dashboards — e.g.
+# `cattle-dashboards` (Rancher Monitoring) or Grafana's own namespace
+# (kube-prometheus-stack, unless sidecar.dashboards.searchNamespace=ALL).
+# Requires kube-state-metrics for the cost panels.
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: ephora-operator
+
+configMapGenerator:
+- name: ephora-operator-finops-dashboard
+  files:
+  - ephora-finops.json
