@@ -200,15 +200,37 @@ Sans jeton, ou avec un jeton non autorisé, la réponse est `401` ou `403`.
 
 ### Alertes recommandées
 
+Elles sont fournies sous forme de `PrometheusRule` dans `config/prometheus/rules.yaml`, installée avec le `ServiceMonitor` (décommenter `- ../prometheus` dans `config/default/kustomization.yaml`).
+
 | Alerte | Expression PromQL | Sévérité |
 |---|---|---|
-| Opérateur absent | `absent(up{job="ephora-operator"} == 1)` | critique |
+| Opérateur absent | `absent(up{job=~".*ephora-operator.*"} == 1)` | critique |
 | Provisionnement lent (NFR : < 3 min) | `histogram_quantile(0.95, sum by (le) (rate(preview_environment_provisioning_duration_seconds_bucket[1h]))) > 180` | avertissement |
 | Nettoyages par balayage (un finalizer a expiré) | `increase(preview_environment_cleanup_total{reason="orphan_sweep"}[1h]) > 0` | avertissement |
 | Trop d'environnements (NFR : 50) | `preview_environments_active > 50` | avertissement |
 | Erreurs de réconciliation en hausse | `rate(controller_runtime_reconcile_errors_total{controller="previewenvironment"}[15m]) > 0.1` | avertissement |
 
 > Il n'existe pas encore de métrique par phase : pour compter les environnements `Failed`, voir [§5](#5-diagnostic).
+
+### Tableau de bord FinOps (Grafana)
+
+`config/grafana` livre le tableau de bord **« ephora-operator — FinOps des environnements de preview »** (ADR-09) sous forme de ConfigMap, chargée automatiquement par le sidecar de Grafana (label `grafana_dashboard: "1"`) :
+
+```bash
+# Rancher Monitoring : namespace cattle-dashboards
+kustomize build config/grafana | kubectl apply -n cattle-dashboards -f -
+# kube-prometheus-stack : namespace de Grafana (ou tout namespace si searchNamespace=ALL)
+kustomize build config/grafana | kubectl apply -n monitoring -f -
+```
+
+| Section | Contenu |
+|---|---|
+| Indicateurs | Environnements actifs, créés et **nettoyés automatiquement** (TTL + orphelins) sur la période, provisionnement p95, coût horaire et mensuel projeté |
+| Coût | Évolution du coût, top 10 des environnements les plus coûteux, ressources réservées |
+| Activité | Créations et nettoyages par jour et par raison, délai de provisionnement p50/p95 |
+| Santé | Erreurs de réconciliation, file d'attente |
+
+**Prix** : à régler dans les variables du tableau de bord (€ par vCPU-heure, € par Gio-heure ; valeurs indicatives par défaut). Le coût est une **estimation** fondée sur les ressources réservées (`requests`) des namespaces `preview-pr-*` : il nécessite **kube-state-metrics** et ignore stockage, réseau et capacité inutilisée des nœuds.
 
 ---
 

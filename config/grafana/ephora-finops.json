@@ -1,0 +1,246 @@
+{
+  "uid": "ephora-finops",
+  "title": "ephora-operator — FinOps des environnements de preview",
+  "description": "Activité, coût estimé et santé des environnements de preview (ephora-operator, ADR-09). Coût = ressources réservées (requests) × prix unitaires définis dans les variables.",
+  "tags": ["ephora-operator", "finops", "preview-environments"],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Source Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "cpu_price",
+        "label": "€ par vCPU-heure",
+        "type": "textbox",
+        "query": "0.04",
+        "current": { "text": "0.04", "value": "0.04" },
+        "hide": 0
+      },
+      {
+        "name": "mem_price",
+        "label": "€ par Gio-heure",
+        "type": "textbox",
+        "query": "0.005",
+        "current": { "text": "0.005", "value": "0.005" },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Environnements actifs",
+      "description": "Environnements en phase Running (preview_environments_active).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "max(preview_environments_active) or vector(0)", "legendFormat": "actifs", "instant": true }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Créés sur la période",
+      "description": "Premiers déploiements réussis sur la période affichée.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "round(sum(increase(preview_environment_provisioning_duration_seconds_count[$__range]))) or vector(0)", "instant": true }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Nettoyés automatiquement",
+      "description": "Environnements supprimés par l'opérateur sans action humaine (TTL expiré + balayage des orphelins) : les environnements oubliés rattrapés.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "purple" } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "round(sum(increase(preview_environment_cleanup_total{reason=~\"ttl_expired|orphan_sweep\"}[$__range]))) or vector(0)", "instant": true }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Provisionnement p95",
+      "description": "Délai création → Running, 95e centile sur la période (objectif DAT : < 3 min).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 120 }, { "color": "red", "value": 180 } ] },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(preview_environment_provisioning_duration_seconds_bucket[$__range])))", "instant": true }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Coût horaire actuel (estimé)",
+      "description": "Ressources réservées (requests CPU + mémoire) dans les namespaces preview-pr-*, valorisées aux prix des variables.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "currencyEUR", "decimals": 2, "color": { "mode": "fixed", "fixedColor": "orange" } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "(sum(kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"cpu\"}) or vector(0)) * $cpu_price + (sum(kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"memory\"}) or vector(0)) / 1073741824 * $mem_price" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Coût mensuel projeté (estimé)",
+      "description": "Coût horaire actuel × 730 h.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "currencyEUR", "decimals": 0, "color": { "mode": "fixed", "fixedColor": "red" } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "((sum(kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"cpu\"}) or vector(0)) * $cpu_price + (sum(kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"memory\"}) or vector(0)) / 1073741824 * $mem_price) * 730" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Environnements actifs",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "min": 0, "custom": { "fillOpacity": 20, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "expr": "max(preview_environments_active)", "legendFormat": "actifs" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Coût horaire estimé",
+      "description": "Évolution du coût des ressources réservées par les previews.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "currencyEUR", "decimals": 2, "custom": { "fillOpacity": 20, "lineWidth": 2, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "expr": "(sum(kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"cpu\"}) or vector(0)) * $cpu_price", "legendFormat": "CPU" },
+        { "refId": "B", "expr": "(sum(kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"memory\"}) or vector(0)) / 1073741824 * $mem_price", "legendFormat": "Mémoire" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Créations et nettoyages",
+      "description": "Par intervalle (adapté à la période affichée, 1 h minimum). deleted = PR fermée (CI) ; ttl_expired et orphan_sweep = nettoyages automatiques d'environnements oubliés.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "interval": "1h",
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 70, "stacking": { "mode": "none" } } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "expr": "round(sum(increase(preview_environment_provisioning_duration_seconds_count[$__interval])))", "legendFormat": "créés" },
+        { "refId": "B", "expr": "round(sum by (reason) (increase(preview_environment_cleanup_total[$__interval])))", "legendFormat": "nettoyés · {{reason}}" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Délai de provisionnement",
+      "description": "Création → Running. Objectif DAT : p95 < 3 min.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "lineWidth": 2, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "transparent", "value": null }, { "color": "red", "value": 180 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(preview_environment_provisioning_duration_seconds_bucket[6h])))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(preview_environment_provisioning_duration_seconds_bucket[6h])))", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Environnements les plus coûteux (maintenant)",
+      "description": "Top 10 des namespaces de preview par coût horaire estimé.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 20 },
+      "options": { "showHeader": true, "sortBy": [ { "displayName": "€ / heure", "desc": true } ] },
+      "fieldConfig": { "defaults": {}, "overrides": [
+        { "matcher": { "id": "byName", "options": "Value #A" }, "properties": [ { "id": "displayName", "value": "vCPU réservés" }, { "id": "decimals", "value": 2 } ] },
+        { "matcher": { "id": "byName", "options": "Value #B" }, "properties": [ { "id": "displayName", "value": "Mémoire réservée" }, { "id": "unit", "value": "bytes" } ] },
+        { "matcher": { "id": "byName", "options": "Value #C" }, "properties": [ { "id": "displayName", "value": "€ / heure" }, { "id": "unit", "value": "currencyEUR" }, { "id": "decimals", "value": 3 } ] }
+      ] },
+      "transformations": [
+        { "id": "merge", "options": {} },
+        { "id": "organize", "options": { "excludeByName": { "Time": true }, "renameByName": { "namespace": "Namespace" } } }
+      ],
+      "targets": [
+        { "refId": "A", "expr": "topk(10, sum by (namespace) (kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"cpu\"}))", "format": "table", "instant": true },
+        { "refId": "B", "expr": "sum by (namespace) (kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"memory\"})", "format": "table", "instant": true },
+        { "refId": "C", "expr": "topk(10, sum by (namespace) (kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"cpu\"}) * $cpu_price + sum by (namespace) (kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"memory\"}) / 1073741824 * $mem_price)", "format": "table", "instant": true }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Ressources réservées par les previews",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 20 },
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 10 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Mémoire (Gio)" }, "properties": [ { "id": "custom.axisPlacement", "value": "right" } ] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "expr": "sum(kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"cpu\"}) or vector(0)", "legendFormat": "vCPU" },
+        { "refId": "B", "expr": "(sum(kube_pod_container_resource_requests{namespace=~\"preview-pr-.*\",resource=\"memory\"}) or vector(0)) / 1073741824", "legendFormat": "Mémoire (Gio)" }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Santé de l'opérateur",
+      "description": "Erreurs de réconciliation (par minute) et file d'attente. Un niveau d'erreurs durable signale des environnements en échec : voir le runbook §6.1.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 29 },
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(controller_runtime_reconcile_errors_total{controller=\"previewenvironment\"}[5m])) * 60", "legendFormat": "erreurs / min" },
+        { "refId": "B", "expr": "sum(workqueue_depth{name=\"previewenvironment\"})", "legendFormat": "file d'attente" }
+      ]
+    }
+  ]
+}

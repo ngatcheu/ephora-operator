@@ -1,0 +1,53 @@
+# Alerts from docs/runbook.md §4, as a PrometheusRule (Prometheus Operator).
+# Enabled together with the ServiceMonitor (config/prometheus).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    app.kubernetes.io/name: ephora-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: controller-manager-alerts
+  namespace: system
+spec:
+  groups:
+  - name: ephora-operator
+    rules:
+    - alert: EphoraOperatorDown
+      expr: absent(up{job=~".*ephora-operator.*"} == 1)
+      for: 10m
+      labels:
+        severity: critical
+      annotations:
+        summary: ephora-operator is not running
+        description: No preview environment is created, updated or cleaned up. Runbook §6.8.
+    - alert: EphoraProvisioningSlow
+      expr: histogram_quantile(0.95, sum by (le) (rate(preview_environment_provisioning_duration_seconds_bucket[1h]))) > 180
+      for: 30m
+      labels:
+        severity: warning
+      annotations:
+        summary: Preview environments take more than 3 minutes to provision (p95)
+        description: "p95 = {{ $value | humanizeDuration }}, NFR target < 3 min (DAT §6)."
+    - alert: EphoraOrphanSweepCleanups
+      expr: increase(preview_environment_cleanup_total{reason="orphan_sweep"}[1h]) > 0
+      labels:
+        severity: warning
+      annotations:
+        summary: Preview namespaces were cleaned up by the orphan sweep
+        description: A finalizer timed out or a namespace was left behind. Runbook §6.4.
+    - alert: EphoraTooManyEnvironments
+      expr: max(preview_environments_active) > 50
+      for: 1h
+      labels:
+        severity: warning
+      annotations:
+        summary: More than 50 active preview environments
+        description: "{{ $value }} active environments: beyond the capacity validated in DAT §6."
+    - alert: EphoraReconcileErrors
+      expr: sum(rate(controller_runtime_reconcile_errors_total{controller="previewenvironment"}[15m])) > 0.1
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: ephora-operator reconcile errors are rising
+        description: Environments are failing repeatedly. Check `kubectl get penv -A`, runbook §6.1.

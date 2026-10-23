@@ -1,4 +1,5 @@
+# Prometheus Operator resources (opt-in: uncomment `- ../prometheus` in
+# config/default/kustomization.yaml when the ServiceMonitor CRD exists).
 resources:
 - monitor.yaml
-
-
+- rules.yaml

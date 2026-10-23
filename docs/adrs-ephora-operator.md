@@ -229,3 +229,32 @@ Le contenu est produit par `hack/preview-status.sh`, exécutable en local.
 - **Positif** : retour immédiat dans la PR, sans droit supplémentaire ni secret dans le cluster ; la sortie est aussi copiée dans le résumé du job GitHub Actions.
 - **Négatif** : le commentaire reflète l'état **au moment du déploiement**. Une expiration ou un échec survenus plus tard ne sont pas répercutés (la date d'expiration est affichée). Le job de CI attend la fin du déploiement (10 min maximum par défaut).
 - **Révision prévue** : si le suivi en continu devient nécessaire, envisager une GitHub App à permissions minimales plutôt qu'un jeton personnel.
+
+---
+
+## ADR-09 : Tableau de bord FinOps — coût estimé à partir des ressources réservées
+
+### Statut
+Accepté (v0.1.6) — fonctionnalité V2, optionnelle (DAT §8)
+
+### Contexte
+L'objectif FinOps du projet (DAT §1.2) doit être **mesurable** : combien d'environnements, combien coûtent-ils, combien d'environnements oubliés l'opérateur a-t-il nettoyés. Il faut un modèle de coût, sans dépendre d'un outil de facturation particulier.
+
+Options :
+1. **ressources réservées** (`requests` CPU et mémoire, via kube-state-metrics) × prix unitaires ;
+2. **consommation réelle** (cAdvisor) × prix unitaires ;
+3. un outil dédié (OpenCost, Kubecost) ou la facture du fournisseur.
+
+### Décision
+Option 1, dans un tableau de bord Grafana livré en ConfigMap (`config/grafana`) : prix par vCPU-heure et par Gio-heure en **variables** du tableau de bord (valeurs indicatives par défaut), aucune modification de l'opérateur. Les alertes du runbook sont livrées en `PrometheusRule` avec le `ServiceMonitor` (`config/prometheus`, optionnel).
+
+### Justification
+- Ce qu'un environnement **réserve** est ce qu'il empêche d'utiliser ailleurs : c'est le coût pertinent pour dimensionner un cluster de preview, plus stable que la consommation instantanée.
+- Uniquement des métriques standard (kube-state-metrics, présent avec le Prometheus Operator et Rancher Monitoring) et celles de l'opérateur : rien à installer en plus.
+- Les prix restent un paramètre visible : l'estimation est explicite, ajustable au tarif réel du cluster.
+- Le nombre de **nettoyages automatiques** (TTL, orphelins) est mesuré directement par l'opérateur : c'est l'argument FinOps factuel (environnements oubliés rattrapés).
+
+### Conséquences
+- **Positif** : indicateurs disponibles dès l'installation, sans dépendance nouvelle ; argument chiffré pour la décision de généralisation.
+- **Négatif** : c'est une **estimation**. Elle ignore les coûts non liés aux requests (stockage, réseau, nœuds sous-utilisés) et suppose que les charts déclarent des requests (sinon le `LimitRange` applique ses valeurs par défaut, qui sont alors comptées).
+- **Révision prévue** : brancher OpenCost ou la facturation réelle si une comptabilité précise par équipe devient nécessaire.
