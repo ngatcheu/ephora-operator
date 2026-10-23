@@ -12,7 +12,7 @@
 resources:
 # Pinned release — bump deliberately, after reading its notes and verifying
 # its signature (README, "Depuis une release").
-- https://github.com/ngatcheu/ephora-operator/releases/download/v0.1.4/install.yaml
+- https://github.com/ngatcheu/ephora-operator/releases/download/v0.1.6/install.yaml
 # Management namespace + per-team access (one file per onboarded team).
 - management-namespace.yaml
 - team-example.yaml
